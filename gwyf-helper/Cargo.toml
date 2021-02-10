@@ -1,0 +1,10 @@
+[package]
+name = "gfw-helper"
+version = "0.1.0"
+authors = ["Camas <camas@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+winapi = { version = "*", features = ["memoryapi", "processthreadsapi", "std", "tlhelp32", "winbase"] }
+kernel32-sys = "*"
+injected-dll = { path = "../injected-dll" }

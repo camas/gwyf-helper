@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "gwyf-helper",
+    "injected-dll"
+]

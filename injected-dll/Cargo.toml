@@ -1,0 +1,21 @@
+[package]
+name = "injected-dll"
+version = "0.1.0"
+authors = ["Camas <camas@users.noreply.github.com>"]
+edition = "2018"
+
+[lib]
+name = "injected_dll"
+crate-type = ["cdylib"]
+
+[dependencies]
+winapi = { version = "*", features = ["consoleapi", "d3d11", "libloaderapi", "psapi", "processthreadsapi","tlhelp32", "winuser", ] }
+detour = "*"
+imgui = "*"
+imgui-dx11-renderer = "*"
+winit = "*"
+bitflags = "*"
+lazy_static = "*"
+log = "*"
+simplelog = "*"
+dirs = "*"

@@ -1,0 +1,41 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug gfw-helper",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=gfw-helper",
+                    "--package=gfw-helper"
+                ],
+                "filter": {
+                    "name": "gfw-helper",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Attach to gfwy",
+            "type": "lldb",
+            "request": "attach",
+            "program": "Golf With Your Friends.exe"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run/Attach",
+            "configurations": [
+                "Debug gfw-helper",
+                "Attach to gfwy"
+            ]
+        }
+    ]
+}
