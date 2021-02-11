@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug gfw-helper",
+            "name": "Debug gwyf-helper",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=gfw-helper",
-                    "--package=gfw-helper"
+                    "--bin=gwyf-helper",
+                    "--package=gwyf-helper"
                 ],
                 "filter": {
-                    "name": "gfw-helper",
+                    "name": "gwyf-helper",
                     "kind": "bin"
                 }
             },
@@ -23,7 +23,7 @@
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "Attach to gfwy",
+            "name": "Attach to gwyf",
             "type": "lldb",
             "request": "attach",
             "program": "Golf With Your Friends.exe"
@@ -33,8 +33,8 @@
         {
             "name": "Run/Attach",
             "configurations": [
-                "Debug gfw-helper",
-                "Attach to gfwy"
+                "Debug gwyf-helper",
+                "Attach to gwyf"
             ]
         }
     ]

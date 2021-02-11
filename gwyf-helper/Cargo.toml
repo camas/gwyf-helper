@@ -1,5 +1,5 @@
 [package]
-name = "gfw-helper"
+name = "gwyf-helper"
 version = "0.1.0"
 authors = ["Camas <camas@users.noreply.github.com>"]
 edition = "2018"

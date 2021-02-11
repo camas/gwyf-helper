@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 winapi = { version = "*", features = ["consoleapi", "d3d11", "libloaderapi", "psapi", "processthreadsapi","tlhelp32", "winuser", ] }
 detour = "*"
 imgui = "*"
-imgui-dx11-renderer = "*"
+imgui-dx11-renderer = { path = "../../../imgui-dx11-renderer"}
 winit = "*"
 bitflags = "*"
 lazy_static = "*"

@@ -11,10 +11,10 @@ pub fn init() {
     let module = Module::new("GameAssembly.dll");
     unsafe {
         BASE_ADDRESS = module.base_addr as *const u8;
-        let il2cpp_domain_get = std::mem::transmute::<_, extern "system" fn() -> *const ()>(
+        let il2cpp_domain_get = std::mem::transmute::<_, extern "system" fn() -> *const u8>(
             BASE_ADDRESS.offset(0x001c7360),
         );
-        let il2cpp_thread_attach = std::mem::transmute::<_, extern "system" fn(*const ())>(
+        let il2cpp_thread_attach = std::mem::transmute::<_, extern "system" fn(*const u8)>(
             BASE_ADDRESS.offset(0x001c8540),
         );
         il2cpp_thread_attach(il2cpp_domain_get());
@@ -40,6 +40,10 @@ impl GameState__Class {
     pub fn get() -> &'static GameState__Class {
         unsafe { &**(BASE_ADDRESS.offset(0x02aa4648) as *const *const GameState__Class) }
     }
+
+    pub fn static_fields(&self) -> &GameState__StaticFields {
+        unsafe { &*self.static_fields }
+    }
 }
 
 #[repr(C)]
@@ -47,28 +51,47 @@ pub struct GameState__StaticFields {
     pub shared_context_info: *const GameContextInformation,
 }
 
+impl GameState__StaticFields {
+    pub fn shared_context_info(&self) -> &GameContextInformation {
+        unsafe { &*self.shared_context_info }
+    }
+}
+
 #[repr(C)]
 pub struct GameContextInformation {
     _filler1: [u8; 16],
     pub online_data: OnlineStateInformation,
-    pub region_infos: *const (),
-    pub session_infos: *const (),
-    pub session_filter: *const (),
-    pub session_settings: *const (),
-    pub session_info: *const (),
+    pub region_infos: *const u8,
+    pub session_infos: *const u8,
+    pub session_filter: *const u8,
+    pub session_settings: *const u8,
+    pub session_info: SessionInfo,
     pub user_infos: *const UserInfosData,
-    pub game_management: *const (),
-    pub gameplay_settings: *const (),
-    pub game_mode_datas: *const (),
-    pub options: *const (),
-    pub level_editor: *const (),
+    pub game_management: *const u8,
+    pub gameplay_settings: *const u8,
+    pub game_mode_datas: *const u8,
+    pub options: *const u8,
+    pub level_editor: *const u8,
 }
+
+impl GameContextInformation {
+    pub fn user_infos(&self) -> &UserInfosData {
+        unsafe { &*self.user_infos }
+    }
+}
+
+#[repr(C)]
+pub struct SessionInfo {
+    pub room_info_backing_field: *const u8,
+}
+
+impl SessionInfo {}
 
 #[repr(C)]
 pub struct OnlineStateInformation {
     pub connection_region: i32,
-    pub local_player_account_details: *const (),
-    pub local_player_id: *const (),
+    pub local_player_account_details: *const u8,
+    pub local_player_id: *const u8,
 }
 
 #[repr(C)]
@@ -175,8 +198,27 @@ impl User {
         }
     }
 
+    pub fn hole_scores(&self) -> &Int32__Array {
+        unsafe { &*self.fields.hole_scores }
+    }
+
     pub fn photon_player(&self) -> &PhotonPlayer {
         unsafe { &*self.fields.m_photon_player }
+    }
+
+    pub fn player_camera(&self) -> &CameraFollow {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const User, *const MethodInfo) -> *const CameraFollow,
+            >(BASE_ADDRESS.offset(0x003234a0));
+            &*method(self, null())
+        }
+    }
+
+    pub fn game_flow_state(&self) -> GameFlowUserState {
+        assert!(self.fields.m_game_flow_state <= GameFlowUserState::LevelEditor as i32);
+        unsafe { std::mem::transmute(self.fields.m_game_flow_state) }
     }
 
     pub fn set_color(&self, color: &Color) {
@@ -196,6 +238,62 @@ impl User {
             );
             method(self, null());
         }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug)]
+pub enum GameFlowUserState {
+    Invalid,
+    LevelSetup,
+    LevelSetupRunning_ComponentCache,
+    LevelSetupRunning_CullingSetup,
+    LevelSetupFinished,
+    SpawnPlayers,
+    SpawnedPlayers,
+    GameplayStarting,
+    GameplayStarted,
+    HoleStarting,
+    HoleStarted,
+    InHoleStarting,
+    InHoleStarted,
+    AllInHoleStarting,
+    AllInHoleStarted,
+    IntermissionStarting,
+    IntermissionStarted,
+    NextHoleStarting,
+    NextHoleStarted,
+    GameOutroStarting,
+    GameOutroStarted,
+    GameEnding,
+    GameEnded,
+    LevelEditor,
+}
+
+#[repr(C)]
+pub struct CameraFollow {
+    pub klass: *const u8,
+    pub monitor: *const u8,
+    pub fields: CameraFollow_Fields,
+}
+
+#[repr(C)]
+pub struct CameraFollow_Fields {
+    pub mono_behaviour_fields: *const u8,
+    pub hitpoint: *const GameObject,
+    pub pivot_point: *const GameObject,
+    filler1: [u8; 76],
+    pub player_pos: Vector3,
+}
+
+impl CameraFollow {
+    pub fn pivot_point(&self) -> &GameObject {
+        unsafe { &*self.fields.pivot_point }
+    }
+
+    pub fn hitpoint(&self) -> &GameObject {
+        unsafe { &*self.fields.hitpoint }
     }
 }
 
@@ -244,13 +342,13 @@ impl UserService {
         }
     }
 
-    pub fn primary_local_user(&self) -> &User {
+    pub fn primary_local_user(&self) -> Option<&User> {
         unsafe {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const UserService, *const MethodInfo) -> *const User,
             >(BASE_ADDRESS.offset(0x00328010));
-            &*method(self, null())
+            method(self, null()).as_ref()
         }
     }
 }
@@ -261,12 +359,12 @@ pub struct Int32__Array {
     pub monitor: *const u8,
     pub bounds: *const u8,
     pub max_length: u64,
-    pub vector: [i32; 32],
+    pub vector: i32,
 }
 
 impl Int32__Array {
     pub fn values(&self) -> &[i32] {
-        &self.vector[0..self.max_length as usize]
+        unsafe { std::slice::from_raw_parts(&self.vector as *const i32, self.max_length as usize) }
     }
 }
 
@@ -326,6 +424,16 @@ impl Default for Vector3 {
 impl Vector3 {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn distance(&self, other: &Vector3) -> f32 {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const Vector3, *const Vector3, *const MethodInfo) -> f32,
+            >(BASE_ADDRESS.offset(0x0153bcc0));
+            method(self, other, null())
+        }
     }
 }
 
@@ -443,6 +551,132 @@ impl RigidBody {
                 extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
             >(BASE_ADDRESS.offset(0x01b648a0));
             method(self, velocity, null());
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GameObject {}
+
+impl GameObject {
+    pub fn find_game_objects_with_tag(tag: &Il2CppString) -> &GameObject__Array {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(
+                    *const Il2CppString,
+                    *const MethodInfo,
+                ) -> *const GameObject__Array,
+            >(BASE_ADDRESS.offset(0x013ad760));
+            &*method(tag, null())
+        }
+    }
+
+    pub fn transform(&self) -> &Transform {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const GameObject, *const MethodInfo) -> *const Transform,
+            >(BASE_ADDRESS.offset(0x013ad350));
+            &*method(self, null())
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GameObject__Array {
+    pub klass: *const u8,
+    pub monitor: *const u8,
+    pub bounds: *const u8,
+    pub max_length: u64,
+    pub vector: *const GameObject,
+}
+
+impl GameObject__Array {
+    pub fn values(&self) -> &[&GameObject] {
+        unsafe {
+            std::slice::from_raw_parts(
+                &self.vector as *const *const GameObject as *const &GameObject,
+                self.max_length as usize,
+            )
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Debug {}
+
+impl Debug {
+    pub fn draw_line(
+        start: &Vector3,
+        end: &Vector3,
+        color: &Color,
+        duration: f32,
+        depth_test: bool,
+    ) {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(
+                    *const Vector3,
+                    *const Vector3,
+                    *const Color,
+                    f32,
+                    bool,
+                    *const MethodInfo,
+                ),
+            >(BASE_ADDRESS.offset(0x013a3980));
+            method(start, end, color, duration, depth_test, null());
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Transform {}
+
+impl Transform {
+    pub fn position(&self) -> Vector3 {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const Transform, *const MethodInfo) -> Vector3,
+            >(BASE_ADDRESS.offset(0x01532640));
+            method(self, null())
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Camera {}
+
+impl Camera {
+    pub fn main() -> &'static Camera {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const MethodInfo) -> *const Camera,
+            >(BASE_ADDRESS.offset(0x0139d0e0));
+            &*method(null())
+        }
+    }
+
+    pub fn current() -> &'static Camera {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const MethodInfo) -> *const Camera,
+            >(BASE_ADDRESS.offset(0x0139d130));
+            &*method(null())
+        }
+    }
+
+    pub fn world_to_screen_point(&self, position: &Vector3) -> Vector3 {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const Camera, *const Vector3, *const MethodInfo) -> Vector3,
+            >(BASE_ADDRESS.offset(0x0139cbd0));
+            method(self, position, null())
         }
     }
 }

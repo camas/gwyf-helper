@@ -1,14 +1,13 @@
 #![feature(assoc_char_funcs)]
 #![allow(clippy::zst_offset)]
 
-use std::{
-    ffi::c_void,
-    time::{Duration, Instant},
-};
+use std::{ffi::c_void, time::Instant};
 
-use api::{il2cpp_array_new, Il2CppClass};
-use gamestructs::{GameState__Class, User, UserService, Vector3, BASE_ADDRESS};
-use imgui::{im_str, Condition, ImString, Ui, Window};
+use api::il2cpp_string_new;
+use gamestructs::{
+    Camera, GameFlowUserState, GameObject, GameState__Class, User, UserService, Vector3,
+};
+use imgui::{im_str, Condition, ImString, Slider, Ui, Window};
 use log::{info, LevelFilter};
 use simplelog::{CombinedLogger, TermLogger, TerminalMode};
 use winapi::{
@@ -39,9 +38,9 @@ pub extern "stdcall" fn DllMain(hinst_dll: HINSTANCE, fdw_reason: u32, _reserved
 }
 
 pub fn main() {
-    unsafe {
-        winapi::um::consoleapi::AllocConsole();
-    }
+    // unsafe {
+    //     winapi::um::consoleapi::AllocConsole();
+    // }
 
     CombinedLogger::init(vec![TermLogger::new(
         LevelFilter::Debug,
@@ -60,6 +59,9 @@ static mut STATE: State = State {
     player_to_copy: None,
     set_initial_spacing: false,
     hitting: None,
+    hole_setting: HoleSetting::Lines,
+    hole_line_opacity: 0.4,
+    hole_range: 100.,
 };
 
 struct State {
@@ -67,6 +69,9 @@ struct State {
     player_to_copy: Option<(usize, *const User)>,
     set_initial_spacing: bool,
     hitting: Option<HittingState>,
+    hole_setting: HoleSetting,
+    hole_line_opacity: f32,
+    hole_range: f32,
 }
 
 pub fn draw_callback(ui: &Ui) {
@@ -77,27 +82,40 @@ pub fn draw_callback(ui: &Ui) {
         gamestructs::init();
     }
 
-    let _io = ui.io();
+    let io = ui.io();
+    let draw_list = ui.get_background_draw_list();
+    let screen_width = io.display_size[0];
+    let screen_height = io.display_size[1];
     // ui.show_demo_window(&mut true);
 
     // Fetch static links
-    let context = unsafe {
-        GameState__Class::get()
-            .static_fields
-            .as_ref()
-            .unwrap()
-            .shared_context_info
-            .as_ref()
-            .unwrap()
-    };
+    let context = GameState__Class::get()
+        .static_fields()
+        .shared_context_info();
     let user_service = UserService::get();
-    let user_infos = unsafe { context.user_infos.as_ref().unwrap() };
+    let user_infos = context.user_infos();
+    let session_info = &context.session_info;
 
     // Read data
     let users = (0..user_infos.count())
         .map(|i| user_infos.get(i).user())
         .collect::<Vec<_>>();
     let player = user_service.primary_local_user();
+    // End early if no player object
+    if player.is_none() {
+        if let Some(token) = ui.begin_main_menu_bar() {
+            ui.text("gwyf helper 1.0 - game loading");
+            token.end(&ui);
+        }
+        return;
+    }
+    let player = player.unwrap();
+    let flow_state = player.game_flow_state();
+    let playing = matches!(
+        flow_state,
+        GameFlowUserState::HoleStarted | GameFlowUserState::InHoleStarted
+    );
+    let camera = Camera::main();
 
     // Color copying
     if let Some((i, user_ptr)) = &state.player_to_copy {
@@ -140,11 +158,79 @@ pub fn draw_callback(ui: &Ui) {
         }
     }
 
+    // Hole esp
+    if playing && state.hole_setting != HoleSetting::None {
+        // Find all holes
+        let holes = GameObject::find_game_objects_with_tag(il2cpp_string_new(b"Hole\0"));
+
+        // Get player position for calulcating distance to holes
+        let player_pos = &player.player_camera().fields.player_pos;
+
+        // Draw lines from bottom of screen
+        let from = [screen_width / 2., screen_height];
+        for obj in holes.values() {
+            let obj_pos = obj.transform().position();
+            let to = camera.world_to_screen_point(&obj_pos);
+            let distance = player_pos.distance(&obj_pos);
+            // Ignore if behind camera
+            if to.z < 0. || distance > state.hole_range {
+                continue;
+            }
+            if state.hole_setting == HoleSetting::Lines {
+                // Unity y axis is inverted
+                draw_list
+                    .add_line(
+                        from,
+                        [to.x, screen_height - to.y],
+                        [1., 0., 0., state.hole_line_opacity],
+                    )
+                    .build();
+            }
+            draw_list
+                .add_circle([to.x, screen_height - to.y], 2., [1., 0., 0., 1.])
+                .build();
+
+            let text = ImString::new(format!("{:.1}m", distance));
+            let text_width = ui.calc_text_size(&text, false, 0.)[0];
+            draw_list.add_text(
+                [to.x - (text_width / 2.), screen_height - to.y - 20.],
+                [1., 1., 1.],
+                text,
+            );
+        }
+    }
+
     if let Some(token) = ui.begin_main_menu_bar() {
         ui.text("gwyf helper 1.0 ");
 
+        // ESP Settings
+        if let Some(token) = ui.begin_menu(im_str!("esp"), true) {
+            // Hole options
+            ui.text("Hole esp:");
+            ui.radio_button(im_str!("None"), &mut state.hole_setting, HoleSetting::None);
+            ui.radio_button(
+                im_str!("Points"),
+                &mut state.hole_setting,
+                HoleSetting::Points,
+            );
+            ui.radio_button(
+                im_str!("Lines"),
+                &mut state.hole_setting,
+                HoleSetting::Lines,
+            );
+            Slider::new(im_str!("Line opacity"))
+                .range(0.0..=1.0)
+                .build(&ui, &mut state.hole_line_opacity);
+            Slider::new(im_str!("Within range"))
+                .range(0.0..=1000.0)
+                .build(&ui, &mut state.hole_range);
+
+            // Cleanup
+            token.end(&ui);
+        }
+
         // Hit button
-        if users.len() > 1 && ui.button(im_str!("bam"), [40., 20.]) {
+        if playing && users.len() > 1 && ui.button(im_str!("bam"), [40., 20.]) {
             // Hit everyone who isn't in the hole yet
             let to_hit = users
                 .iter()
@@ -165,7 +251,7 @@ pub fn draw_callback(ui: &Ui) {
         }
 
         // Color copying selection
-        if let Some(token) = ui.begin_menu(im_str!("Players: "), true) {
+        if let Some(token) = ui.begin_menu(im_str!("Players:"), true) {
             ui.text("Copy color of:");
             for (i, user) in users.iter().enumerate() {
                 ui.radio_button(
@@ -187,6 +273,16 @@ pub fn draw_callback(ui: &Ui) {
             let c = [c.r, c.g, c.b, c.a];
             ui.text_colored(c, format!("{} ", user.display_name().read()));
         }
+
+        // FlowState
+        let text = ImString::new(format!("{:?}", flow_state));
+        let size = ui.calc_text_size(&text, false, 0.);
+        let new_pos = [
+            ui.cursor_pos()[0] + ui.column_width(0) - size[0],
+            ui.cursor_pos()[1],
+        ];
+        ui.set_cursor_pos(new_pos);
+        ui.text(text);
 
         // Cleanup
         token.end(&ui);
@@ -226,14 +322,14 @@ pub fn draw_callback(ui: &Ui) {
                     let current_score = user.fields.m_hit_counter;
                     let current_hole = user.ball().hole_number();
                     let completed = user.fields.m_in_hole;
-                    let scores = unsafe { &*user.fields.hole_scores }.values();
+                    let scores = user.hole_scores().values();
 
                     for (i, score) in scores.iter().enumerate() {
                         match (i as i32 + 1).cmp(&current_hole) {
                             std::cmp::Ordering::Greater => (),
                             std::cmp::Ordering::Equal => {
                                 let color = if completed {
-                                    [0., 1., 0., 1.]
+                                    [1., 1., 1., 1.]
                                 } else {
                                     [0., 1., 1., 1.]
                                 };
@@ -360,8 +456,7 @@ fn hit_other_player(player: &User, other: &User) {
     let body = player.ball().rigid_body();
     let other_body = other.ball().rigid_body();
 
-    let other_pos = other_body.position();
-    let mut new_pos = other_pos;
+    let mut new_pos = other_body.position();
     new_pos.y += 1.;
     new_pos.z += 0.01;
     body.set_position(&new_pos);
@@ -370,4 +465,11 @@ fn hit_other_player(player: &User, other: &User) {
         y: -200.,
         z: 0.,
     });
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum HoleSetting {
+    None,
+    Points,
+    Lines,
 }
