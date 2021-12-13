@@ -377,10 +377,14 @@ pub struct BallMovement {
 
 #[repr(C)]
 pub struct BallMovement__Fields {
-    _filler1: [u8; 680],
+    _filler1: [u8; 80],
+    pub player_position: Vector3,
+    _filler2: [u8; 584],
     pub m_rigid_body: *const RigidBody,
-    _filler2: [u8; 40],
+    _filler3: [u8; 40],
     pub m_network_ball_sync: *const NetworkBallSync,
+    _filler4: [u8; 136],
+    pub force_field: *const GameObject,
 }
 
 impl BallMovement {
@@ -525,13 +529,22 @@ pub struct RigidBody__Fields {}
 
 impl RigidBody {
     pub fn position(&self) -> Vector3 {
+        // unsafe {
+        //     let method = std::mem::transmute::<
+        //         _,
+        //         extern "system" fn(*const RigidBody, *const MethodInfo) -> Vector3,
+        //     >(BASE_ADDRESS.offset(0x01b64e70));
+        //     method(self, null())
+        // }
+        let mut result = Vector3::new();
         unsafe {
             let method = std::mem::transmute::<
                 _,
-                extern "system" fn(*const RigidBody, *const MethodInfo) -> Vector3,
-            >(BASE_ADDRESS.offset(0x01b64e70));
-            method(self, null())
+                extern "system" fn(*const RigidBody, *mut Vector3, *const MethodInfo),
+            >(BASE_ADDRESS.offset(0x01b657c0));
+            method(self, &mut result, null());
         }
+        result
     }
 
     pub fn set_position(&self, position: &Vector3) {

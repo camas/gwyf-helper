@@ -1,7 +1,11 @@
 #![feature(assoc_char_funcs)]
 #![allow(clippy::zst_offset)]
 
-use std::{ffi::c_void, time::Instant};
+use std::{
+    ffi::c_void,
+    thread,
+    time::{Duration, Instant},
+};
 
 use api::il2cpp_string_new;
 use gamestructs::{
@@ -12,8 +16,10 @@ use log::{info, LevelFilter};
 use simplelog::{CombinedLogger, TermLogger, TerminalMode};
 use winapi::{
     shared::minwindef::HINSTANCE,
-    um::{libloaderapi::DisableThreadLibraryCalls, winnt},
+    um::{libloaderapi::DisableThreadLibraryCalls, winbase::IsBadReadPtr, winnt},
 };
+
+use crate::module::Module;
 
 #[macro_use]
 extern crate bitflags;
@@ -59,9 +65,11 @@ static mut STATE: State = State {
     player_to_copy: None,
     set_initial_spacing: false,
     hitting: None,
-    hole_setting: HoleSetting::Lines,
+    hole_setting: EspSetting::Lines,
     hole_line_opacity: 0.4,
     hole_range: 100.,
+    player_setting: EspSetting::Lines,
+    player_line_opacity: 0.4,
 };
 
 struct State {
@@ -69,9 +77,11 @@ struct State {
     player_to_copy: Option<(usize, *const User)>,
     set_initial_spacing: bool,
     hitting: Option<HittingState>,
-    hole_setting: HoleSetting,
+    hole_setting: EspSetting,
     hole_line_opacity: f32,
     hole_range: f32,
+    player_setting: EspSetting,
+    player_line_opacity: f32,
 }
 
 pub fn draw_callback(ui: &Ui) {
@@ -158,12 +168,54 @@ pub fn draw_callback(ui: &Ui) {
         }
     }
 
+    // Player esp
+    if playing && state.player_setting != EspSetting::None {
+        // Get player position for calculating distance to holes
+        let player_pos = &player.player_camera().fields.player_pos;
+
+        // Draw lines from bottom of screen
+        let from = [screen_width / 2., screen_height];
+        for &obj in users
+            .iter()
+            .filter(|u| **u as *const _ != player as *const _)
+        {
+            let obj_pos = unsafe { (&*(obj.ball().fields.force_field)).transform().position() };
+            let to = camera.world_to_screen_point(&obj_pos);
+            let distance = player_pos.distance(&obj_pos);
+            // Ignore if behind camera
+            if to.z < 0. {
+                continue;
+            }
+            if state.player_setting == EspSetting::Lines {
+                // Unity y axis is inverted
+                draw_list
+                    .add_line(
+                        from,
+                        [to.x, screen_height - to.y],
+                        [0., 0., 1., state.hole_line_opacity],
+                    )
+                    .build();
+            }
+            draw_list
+                .add_circle([to.x, screen_height - to.y], 2., [0., 0., 1., 1.])
+                .build();
+
+            let text = ImString::new(format!("{} {:.1}m", obj.display_name().read(), distance));
+            let text_width = ui.calc_text_size(&text, false, 0.)[0];
+            draw_list.add_text(
+                [to.x - (text_width / 2.), screen_height - to.y - 20.],
+                [1., 1., 1.],
+                text,
+            );
+        }
+    }
+
     // Hole esp
-    if playing && state.hole_setting != HoleSetting::None {
+    if playing && state.hole_setting != EspSetting::None {
         // Find all holes
         let holes = GameObject::find_game_objects_with_tag(il2cpp_string_new(b"Hole\0"));
 
-        // Get player position for calulcating distance to holes
+        // Get player position for calculating distance to holes
         let player_pos = &player.player_camera().fields.player_pos;
 
         // Draw lines from bottom of screen
@@ -176,7 +228,7 @@ pub fn draw_callback(ui: &Ui) {
             if to.z < 0. || distance > state.hole_range {
                 continue;
             }
-            if state.hole_setting == HoleSetting::Lines {
+            if state.hole_setting == EspSetting::Lines {
                 // Unity y axis is inverted
                 draw_list
                     .add_line(
@@ -207,17 +259,13 @@ pub fn draw_callback(ui: &Ui) {
         if let Some(token) = ui.begin_menu(im_str!("esp"), true) {
             // Hole options
             ui.text("Hole esp:");
-            ui.radio_button(im_str!("None"), &mut state.hole_setting, HoleSetting::None);
+            ui.radio_button(im_str!("None"), &mut state.hole_setting, EspSetting::None);
             ui.radio_button(
                 im_str!("Points"),
                 &mut state.hole_setting,
-                HoleSetting::Points,
+                EspSetting::Points,
             );
-            ui.radio_button(
-                im_str!("Lines"),
-                &mut state.hole_setting,
-                HoleSetting::Lines,
-            );
+            ui.radio_button(im_str!("Lines"), &mut state.hole_setting, EspSetting::Lines);
             Slider::new(im_str!("Line opacity"))
                 .range(0.0..=1.0)
                 .build(&ui, &mut state.hole_line_opacity);
@@ -468,7 +516,7 @@ fn hit_other_player(player: &User, other: &User) {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum HoleSetting {
+enum EspSetting {
     None,
     Points,
     Lines,
