@@ -26,7 +26,7 @@
             "name": "Attach to gwyf",
             "type": "lldb",
             "request": "attach",
-            "program": "Golf With Your Friends.exe"
+            "program": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Golf With Your Friends\\Golf With Your Friends.exe"
         }
     ],
     "compounds": [

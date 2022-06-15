@@ -1,25 +1,16 @@
-#![feature(assoc_char_funcs)]
 #![allow(clippy::zst_offset)]
 
-use std::{
-    ffi::c_void,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{ffi::c_void, time::Instant};
 
 use api::il2cpp_string_new;
-use gamestructs::{
-    Camera, GameFlowUserState, GameObject, GameState__Class, User, UserService, Vector3,
-};
-use imgui::{im_str, Condition, ImString, Slider, Ui, Window};
+use gamestructs::{Camera, GameFlowUserState, GameObject, Services, User, Vector3};
+use imgui::{Condition, ImString, Slider, Ui, Window};
 use log::{info, LevelFilter};
-use simplelog::{CombinedLogger, TermLogger, TerminalMode};
+use simplelog::{ColorChoice, CombinedLogger, TermLogger, TerminalMode};
 use winapi::{
     shared::minwindef::HINSTANCE,
-    um::{libloaderapi::DisableThreadLibraryCalls, winbase::IsBadReadPtr, winnt},
+    um::{libloaderapi::DisableThreadLibraryCalls, winnt},
 };
-
-use crate::module::Module;
 
 #[macro_use]
 extern crate bitflags;
@@ -31,6 +22,7 @@ mod signature;
 mod api;
 mod gamestructs;
 mod module;
+mod offsets;
 mod renderer;
 
 #[no_mangle]
@@ -44,14 +36,17 @@ pub extern "stdcall" fn DllMain(hinst_dll: HINSTANCE, fdw_reason: u32, _reserved
 }
 
 pub fn main() {
-    // unsafe {
-    //     winapi::um::consoleapi::AllocConsole();
-    // }
+    // Enable console if in debug mode
+    #[cfg(debug_assertions)]
+    unsafe {
+        winapi::um::consoleapi::AllocConsole();
+    }
 
     CombinedLogger::init(vec![TermLogger::new(
         LevelFilter::Debug,
         simplelog::Config::default(),
         TerminalMode::Mixed,
+        ColorChoice::Auto,
     )])
     .unwrap();
 
@@ -69,7 +64,6 @@ static mut STATE: State = State {
     hole_line_opacity: 0.4,
     hole_range: 100.,
     player_setting: EspSetting::Lines,
-    player_line_opacity: 0.4,
 };
 
 struct State {
@@ -81,7 +75,6 @@ struct State {
     hole_line_opacity: f32,
     hole_range: f32,
     player_setting: EspSetting,
-    player_line_opacity: f32,
 }
 
 pub fn draw_callback(ui: &Ui) {
@@ -96,26 +89,20 @@ pub fn draw_callback(ui: &Ui) {
     let draw_list = ui.get_background_draw_list();
     let screen_width = io.display_size[0];
     let screen_height = io.display_size[1];
-    // ui.show_demo_window(&mut true);
 
     // Fetch static links
-    let context = GameState__Class::get()
-        .static_fields()
-        .shared_context_info();
-    let user_service = UserService::get();
-    let user_infos = context.user_infos();
-    let session_info = &context.session_info;
+    let user_service = Services::get_user();
 
-    // Read data
-    let users = (0..user_infos.count())
-        .map(|i| user_infos.get(i).user())
-        .collect::<Vec<_>>();
+    // Get users
+    let (users, user_count) = user_service.get_users();
+    let users = users.as_vec(user_count as usize);
     let player = user_service.primary_local_user();
+
     // End early if no player object
     if player.is_none() {
         if let Some(token) = ui.begin_main_menu_bar() {
             ui.text("gwyf helper 1.0 - game loading");
-            token.end(&ui);
+            token.end();
         }
         return;
     }
@@ -153,7 +140,7 @@ pub fn draw_callback(ui: &Ui) {
                 state.hitting = None;
             } else {
                 // Hit player
-                hit_other_player(player, &users[next]);
+                hit_other_player(player, users[next]);
                 if hit_state.to_hit.is_empty() {
                     // Reset
                     let body = player.ball().rigid_body();
@@ -175,12 +162,13 @@ pub fn draw_callback(ui: &Ui) {
 
         // Draw lines from bottom of screen
         let from = [screen_width / 2., screen_height];
-        for &obj in users
+        for &other_player in users
             .iter()
             .filter(|u| **u as *const _ != player as *const _)
         {
-            let obj_pos = unsafe { (&*(obj.ball().fields.force_field)).transform().position() };
-            let to = camera.world_to_screen_point(&obj_pos);
+            // let obj_pos = other_player.ball().last_ground_hit().position();
+            let obj_pos = other_player.ball().rigid_body().position();
+            let to = camera.world_to_screen_point_1(&obj_pos);
             let distance = player_pos.distance(&obj_pos);
             // Ignore if behind camera
             if to.z < 0. {
@@ -200,8 +188,12 @@ pub fn draw_callback(ui: &Ui) {
                 .add_circle([to.x, screen_height - to.y], 2., [0., 0., 1., 1.])
                 .build();
 
-            let text = ImString::new(format!("{} {:.1}m", obj.display_name().read(), distance));
-            let text_width = ui.calc_text_size(&text, false, 0.)[0];
+            let text = ImString::new(format!(
+                "{} {:.1}m",
+                other_player.display_name().read(),
+                distance
+            ));
+            let text_width = ui.calc_text_size(&text)[0];
             draw_list.add_text(
                 [to.x - (text_width / 2.), screen_height - to.y - 20.],
                 [1., 1., 1.],
@@ -222,7 +214,7 @@ pub fn draw_callback(ui: &Ui) {
         let from = [screen_width / 2., screen_height];
         for obj in holes.values() {
             let obj_pos = obj.transform().position();
-            let to = camera.world_to_screen_point(&obj_pos);
+            let to = camera.world_to_screen_point_1(&obj_pos);
             let distance = player_pos.distance(&obj_pos);
             // Ignore if behind camera
             if to.z < 0. || distance > state.hole_range {
@@ -243,7 +235,7 @@ pub fn draw_callback(ui: &Ui) {
                 .build();
 
             let text = ImString::new(format!("{:.1}m", distance));
-            let text_width = ui.calc_text_size(&text, false, 0.)[0];
+            let text_width = ui.calc_text_size(&text)[0];
             draw_list.add_text(
                 [to.x - (text_width / 2.), screen_height - to.y - 20.],
                 [1., 1., 1.],
@@ -256,29 +248,21 @@ pub fn draw_callback(ui: &Ui) {
         ui.text("gwyf helper 1.0 ");
 
         // ESP Settings
-        if let Some(token) = ui.begin_menu(im_str!("esp"), true) {
+        if let Some(token) = ui.begin_menu("esp") {
             // Hole options
             ui.text("Hole esp:");
-            ui.radio_button(im_str!("None"), &mut state.hole_setting, EspSetting::None);
-            ui.radio_button(
-                im_str!("Points"),
-                &mut state.hole_setting,
-                EspSetting::Points,
-            );
-            ui.radio_button(im_str!("Lines"), &mut state.hole_setting, EspSetting::Lines);
-            Slider::new(im_str!("Line opacity"))
-                .range(0.0..=1.0)
-                .build(&ui, &mut state.hole_line_opacity);
-            Slider::new(im_str!("Within range"))
-                .range(0.0..=1000.0)
-                .build(&ui, &mut state.hole_range);
+            ui.radio_button("None", &mut state.hole_setting, EspSetting::None);
+            ui.radio_button("Points", &mut state.hole_setting, EspSetting::Points);
+            ui.radio_button("Lines", &mut state.hole_setting, EspSetting::Lines);
+            Slider::new("Line opacity", 0., 1.).build(ui, &mut state.hole_line_opacity);
+            Slider::new("Within range", 0., 1000.).build(ui, &mut state.hole_range);
 
             // Cleanup
-            token.end(&ui);
+            token.end();
         }
 
         // Hit button
-        if playing && users.len() > 1 && ui.button(im_str!("bam"), [40., 20.]) {
+        if playing && users.len() > 1 && ui.button_with_size("bam", [40., 20.]) {
             // Hit everyone who isn't in the hole yet
             let to_hit = users
                 .iter()
@@ -299,7 +283,7 @@ pub fn draw_callback(ui: &Ui) {
         }
 
         // Color copying selection
-        if let Some(token) = ui.begin_menu(im_str!("Players:"), true) {
+        if let Some(token) = ui.begin_menu("Players:") {
             ui.text("Copy color of:");
             for (i, user) in users.iter().enumerate() {
                 ui.radio_button(
@@ -308,10 +292,10 @@ pub fn draw_callback(ui: &Ui) {
                     Some((i, *user)),
                 );
             }
-            ui.radio_button(im_str!("None"), &mut state.player_to_copy, None);
+            ui.radio_button("None", &mut state.player_to_copy, None);
 
             // Cleanup
-            token.end(&ui);
+            token.end();
         }
 
         // Player names
@@ -324,7 +308,7 @@ pub fn draw_callback(ui: &Ui) {
 
         // FlowState
         let text = ImString::new(format!("{:?}", flow_state));
-        let size = ui.calc_text_size(&text, false, 0.);
+        let size = ui.calc_text_size(&text);
         let new_pos = [
             ui.cursor_pos()[0] + ui.column_width(0) - size[0],
             ui.cursor_pos()[1],
@@ -333,14 +317,14 @@ pub fn draw_callback(ui: &Ui) {
         ui.text(text);
 
         // Cleanup
-        token.end(&ui);
+        token.end();
     }
 
     // Scoreboard
-    Window::new(im_str!("Scoreboard"))
+    Window::new("Scoreboard")
         .size([560., -1.], Condition::Always)
-        .build(&ui, || {
-            ui.columns(19, im_str!(""), true);
+        .build(ui, || {
+            ui.columns(19, "", true);
 
             // Set column spacing once
             if !state.set_initial_spacing {
@@ -395,7 +379,7 @@ pub fn draw_callback(ui: &Ui) {
 
                 ui.separator();
             }
-            ui.columns(1, im_str!(""), false);
+            ui.columns(1, "", false);
         });
 
     // unsafe {
@@ -420,7 +404,7 @@ pub fn draw_callback(ui: &Ui) {
     //             let body = &*body;
     //             let pos = body.get_position();
     //             let power = control_player.hit_force * 4. / 10500.;
-    //             Window::new(im_str!("User Info"))
+    //             Window::new("User Info")
     //                 .flags(
     //                     WindowFlags::NO_DECORATION
     //                         | WindowFlags::ALWAYS_AUTO_RESIZE
@@ -444,7 +428,7 @@ pub fn draw_callback(ui: &Ui) {
     //                         "X: {:0.2} Y: {:0.2} Z: {:0.2}",
     //                         pos.x, pos.y, pos.z
     //                     ));
-    //                     if ui.button(im_str!("Hit X"), [60., 20.]) {
+    //                     if ui.button("Hit X", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: 10.,
     //                             y: 0.,
@@ -452,14 +436,14 @@ pub fn draw_callback(ui: &Ui) {
     //                         });
     //                     }
     //                     ui.same_line(62.);
-    //                     if ui.button(im_str!("-X"), [60., 20.]) {
+    //                     if ui.button("-X", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: -10.,
     //                             y: 0.,
     //                             z: 0.,
     //                         });
     //                     }
-    //                     if ui.button(im_str!("Hit Y"), [60., 20.]) {
+    //                     if ui.button("Hit Y", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: 0.,
     //                             y: 10.,
@@ -467,14 +451,14 @@ pub fn draw_callback(ui: &Ui) {
     //                         });
     //                     }
     //                     ui.same_line(62.);
-    //                     if ui.button(im_str!("-Y"), [60., 20.]) {
+    //                     if ui.button("-Y", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: 0.,
     //                             y: -10.,
     //                             z: 0.,
     //                         });
     //                     }
-    //                     if ui.button(im_str!("Hit Z"), [60., 20.]) {
+    //                     if ui.button("Hit Z", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: 0.,
     //                             y: 0.,
@@ -482,7 +466,7 @@ pub fn draw_callback(ui: &Ui) {
     //                         });
     //                     }
     //                     ui.same_line(62.);
-    //                     if ui.button(im_str!("-Z"), [60., 20.]) {
+    //                     if ui.button("-Z", [60., 20.]) {
     //                         body.add_force(&Vector3 {
     //                             x: 0.,
     //                             y: 0.,

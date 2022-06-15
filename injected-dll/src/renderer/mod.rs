@@ -1,4 +1,9 @@
-use std::{mem, ptr::null_mut, time::Instant};
+use std::{
+    ffi::c_void,
+    mem,
+    ptr::{null_mut, NonNull},
+    time::Instant,
+};
 
 use detour::static_detour;
 use imgui::{FontConfig, FontSource, Ui};
@@ -131,7 +136,7 @@ fn swap_chain_present_hook(
             LAST_FRAME = Some(Instant::now());
             IMGUI = Some(imgui::Context::create());
         }
-        let mut imgui = unsafe { IMGUI.as_mut().unwrap() };
+        let imgui = unsafe { IMGUI.as_mut().unwrap() };
         let mut app_data = dirs::config_dir().unwrap();
         app_data.push("gwyf_helper.ini");
         imgui.set_ini_filename(app_data);
@@ -170,7 +175,7 @@ fn swap_chain_present_hook(
         }
 
         unsafe {
-            PLATFORM = Some(WinitPlatform::init(&mut imgui));
+            PLATFORM = Some(WinitPlatform::init(imgui));
         }
         let platform = unsafe { PLATFORM.as_mut().unwrap() };
         platform.attach_window(
@@ -187,9 +192,14 @@ fn swap_chain_present_hook(
             }),
         }]);
         imgui.io_mut().font_global_scale = (1. / hidpi_factor) as f32;
-        unsafe {
-            RENDERER = Some(imgui_dx11_renderer::Renderer::new_raw(&mut imgui, device).unwrap());
 
+        // Hack to turn raw pointer into a windows ID3D11Device
+        struct HackIUnknown(NonNull<c_void>);
+        struct HackID3D11Device(HackIUnknown);
+        let device = HackID3D11Device(HackIUnknown(NonNull::new(device as *mut c_void).unwrap()));
+        unsafe {
+            let device = std::mem::transmute(device);
+            RENDERER = Some(imgui_dx11_renderer::Renderer::new(imgui, &device).unwrap());
             LAST_FRAME = Some(Instant::now());
         }
     }
@@ -219,13 +229,10 @@ fn swap_chain_present_hook(
     }
 
     // Draw
-    // platform.prepare_frame(imgui.io_mut(), &window).unwrap();
     let ui = imgui.frame();
-
     draw_callback(&ui);
 
     // Render
-    // platform.prepare_render(&ui, &mut window);
     unsafe {
         (*context).OMSetRenderTargets(1, &render_target_view, null_mut());
     }

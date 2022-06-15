@@ -5,7 +5,7 @@
 /// * Changed to use a custom Window instead of winit's one
 ///
 /// * Unused functions removed
-use imgui::{self, BackendFlags, Context, ImString, Io, Key};
+use imgui::{self, BackendFlags, Context, Io, Key};
 use winit::dpi::LogicalSize;
 
 use winit::event::VirtualKeyCode;
@@ -17,7 +17,6 @@ use super::window::Window;
 pub struct WinitPlatform {
     hidpi_mode: ActiveHiDpiMode,
     hidpi_factor: f64,
-    cursor_cache: Option<CursorSettings>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -101,14 +100,13 @@ impl WinitPlatform {
         io[Key::X] = VirtualKeyCode::X as _;
         io[Key::Y] = VirtualKeyCode::Y as _;
         io[Key::Z] = VirtualKeyCode::Z as _;
-        imgui.set_platform_name(Some(ImString::from(format!(
+        imgui.set_platform_name(Some(format!(
             "imgui-winit-support {}",
             env!("CARGO_PKG_VERSION")
-        ))));
+        )));
         WinitPlatform {
             hidpi_mode: ActiveHiDpiMode::Default,
             hidpi_factor: 1.0,
-            cursor_cache: None,
         }
     }
     /// Attaches the platform instance to a winit window.

@@ -1,4 +1,7 @@
-use crate::gamestructs::{Il2CppString, BASE_ADDRESS};
+use crate::{
+    gamestructs::{Il2CppString, BASE_ADDRESS},
+    offsets::OFFSETS,
+};
 
 #[allow(clippy::mut_from_ref)]
 pub fn il2cpp_array_new(element_type_info: &Il2CppClass, size: u64) -> &mut Il2CppArray {
@@ -6,7 +9,7 @@ pub fn il2cpp_array_new(element_type_info: &Il2CppClass, size: u64) -> &mut Il2C
         let method = std::mem::transmute::<
             _,
             extern "system" fn(*const Il2CppClass, u64) -> *mut Il2CppArray,
-        >(BASE_ADDRESS.offset(0x001c6ac0));
+        >(BASE_ADDRESS.offset(OFFSETS.api("il2cpp_array_new")));
         &mut *method(element_type_info, size)
     }
 }
@@ -14,7 +17,7 @@ pub fn il2cpp_array_new(element_type_info: &Il2CppClass, size: u64) -> &mut Il2C
 pub fn il2cpp_string_new(value: &'static [u8]) -> &mut Il2CppString {
     unsafe {
         let method = std::mem::transmute::<_, extern "system" fn(*const u8) -> *mut Il2CppString>(
-            BASE_ADDRESS.offset(0x001c8370),
+            BASE_ADDRESS.offset(OFFSETS.api("il2cpp_string_new")),
         );
         &mut *method(value.as_ptr())
     }

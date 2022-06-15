@@ -1,6 +1,6 @@
 [package]
 name = "injected-dll"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Camas <camas@users.noreply.github.com>"]
 edition = "2018"
 
@@ -9,13 +9,24 @@ name = "injected_dll"
 crate-type = ["cdylib"]
 
 [dependencies]
-winapi = { version = "*", features = ["consoleapi", "d3d11", "libloaderapi", "psapi", "processthreadsapi","tlhelp32", "winuser", ] }
+winapi = { version = "*", features = [
+    "consoleapi",
+    "d3d11",
+    "libloaderapi",
+    "psapi",
+    "processthreadsapi",
+    "tlhelp32",
+    "winuser",
+] }
+windows = { version = "*", features = ["Win32_Graphics_Direct3D11"] }
 detour = "*"
 imgui = "*"
-imgui-dx11-renderer = { path = "../../../imgui-dx11-renderer"}
+imgui-dx11-renderer = { git = "https://github.com/Veykril/imgui-dx11-renderer" }
 winit = "*"
 bitflags = "*"
 lazy_static = "*"
 log = "*"
 simplelog = "*"
 dirs = "*"
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"

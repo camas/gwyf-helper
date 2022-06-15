@@ -1,9 +1,8 @@
 use std::ptr::null;
 
-use crate::{
-    api::{il2cpp_string_new, Il2CppArray},
-    module::Module,
-};
+use log::info;
+
+use crate::{module::Module, offsets::OFFSETS};
 
 pub static mut BASE_ADDRESS: *const u8 = null();
 
@@ -11,11 +10,12 @@ pub fn init() {
     let module = Module::new("GameAssembly.dll");
     unsafe {
         BASE_ADDRESS = module.base_addr as *const u8;
+        info!("base addr: {:#018x}", BASE_ADDRESS as usize);
         let il2cpp_domain_get = std::mem::transmute::<_, extern "system" fn() -> *const u8>(
-            BASE_ADDRESS.offset(0x001c7360),
+            BASE_ADDRESS.offset(OFFSETS.api("il2cpp_domain_get")),
         );
         let il2cpp_thread_attach = std::mem::transmute::<_, extern "system" fn(*const u8)>(
-            BASE_ADDRESS.offset(0x001c8540),
+            BASE_ADDRESS.offset(OFFSETS.api("il2cpp_thread_attach")),
         );
         il2cpp_thread_attach(il2cpp_domain_get());
     }
@@ -30,6 +30,62 @@ pub struct VirtualInvokeData {
 #[repr(C)]
 pub struct MethodInfo {}
 
+pub struct Services {}
+
+impl Services {
+    pub fn get_user() -> &'static UserService {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const MethodInfo) -> *const UserService,
+            >(BASE_ADDRESS.offset(OFFSETS.method("Services_get_Users")));
+            &*method(null())
+        }
+    }
+
+    pub fn get_game_state() -> &'static GameStateController {
+        unsafe {
+            let method =
+                std::mem::transmute::<
+                    _,
+                    extern "system" fn(*const MethodInfo) -> *const GameStateController,
+                >(BASE_ADDRESS.offset(OFFSETS.method("Services_get_GameState")));
+            &*method(null())
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GameStateController {}
+
+impl GameStateController {
+    pub fn get_current_state(&self) -> &'static GameState {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(
+                    *const GameStateController,
+                    *const MethodInfo,
+                ) -> *const GameState,
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("GameStateController_get_CurrentState")),
+            );
+            &*method(self, null())
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GameState {
+    pub klass: *const GameState__Class,
+}
+
+impl GameState {
+    pub fn klass(&self) -> &'static GameState__Class {
+        unsafe { &*self.klass }
+    }
+}
+
 #[repr(C)]
 pub struct GameState__Class {
     _filler1: [u8; 184],
@@ -37,10 +93,6 @@ pub struct GameState__Class {
 }
 
 impl GameState__Class {
-    pub fn get() -> &'static GameState__Class {
-        unsafe { &**(BASE_ADDRESS.offset(0x02aa4648) as *const *const GameState__Class) }
-    }
-
     pub fn static_fields(&self) -> &GameState__StaticFields {
         unsafe { &*self.static_fields }
     }
@@ -183,7 +235,7 @@ impl User {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const User, *const MethodInfo) -> *const Il2CppString,
-            >(BASE_ADDRESS.offset(0x00322f10));
+            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_DisplayName")));
             &*method(self, null())
         }
     }
@@ -193,7 +245,7 @@ impl User {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const User, *const MethodInfo) -> *const BallMovement,
-            >(BASE_ADDRESS.offset(0x00323070));
+            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_Ball")));
             &*method(self, null())
         }
     }
@@ -211,7 +263,7 @@ impl User {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const User, *const MethodInfo) -> *const CameraFollow,
-            >(BASE_ADDRESS.offset(0x003234a0));
+            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_PlayerCamera")));
             &*method(self, null())
         }
     }
@@ -226,7 +278,7 @@ impl User {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const User, *const Color, *const MethodInfo),
-            >(BASE_ADDRESS.offset(0x00323a90));
+            >(BASE_ADDRESS.offset(OFFSETS.method("User_set_Colour")));
             method(self, color, null());
         }
     }
@@ -234,7 +286,7 @@ impl User {
     pub fn update_properties(&self) {
         unsafe {
             let method = std::mem::transmute::<_, extern "system" fn(*const User, *const MethodInfo)>(
-                BASE_ADDRESS.offset(0x00324390),
+                BASE_ADDRESS.offset(OFFSETS.method("User_UpdateProperties")),
             );
             method(self, null());
         }
@@ -332,24 +384,52 @@ pub struct Color {
 pub struct UserService {}
 
 impl UserService {
-    pub fn get() -> &'static UserService {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const MethodInfo) -> *const UserService,
-            >(BASE_ADDRESS.offset(0x00625eb0));
-            &*method(null())
-        }
-    }
-
     pub fn primary_local_user(&self) -> Option<&User> {
         unsafe {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const UserService, *const MethodInfo) -> *const User,
-            >(BASE_ADDRESS.offset(0x00328010));
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("UserService_GetPrimaryLocalUser"))
+            );
             method(self, null()).as_ref()
         }
+    }
+
+    pub fn get_users(&self) -> (&User__Array, i32) {
+        let mut count = 0;
+        unsafe {
+            let addr = BASE_ADDRESS.offset(OFFSETS.method("UserService_GetUsers"));
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(
+                    *const UserService,
+                    *mut i32,
+                    *const MethodInfo,
+                ) -> *const User__Array,
+            >(addr);
+            let user_array = method(self, &mut count, null());
+            (&*user_array, count)
+        }
+    }
+}
+
+#[repr(C)]
+pub struct User__Array {
+    pub klass: *const u8,
+    pub monitor: *const u8,
+    pub bounds: *const u8,
+    pub max_length: u64,
+    pub vector: [*const User; 32],
+}
+
+impl User__Array {
+    pub fn get(&self, index: usize) -> &User {
+        unsafe { &*self.vector[index] }
+    }
+
+    pub fn as_vec(&self, count: usize) -> Vec<&User> {
+        (0..count).map(|i| self.get(i)).collect::<Vec<_>>()
     }
 }
 
@@ -377,14 +457,8 @@ pub struct BallMovement {
 
 #[repr(C)]
 pub struct BallMovement__Fields {
-    _filler1: [u8; 80],
-    pub player_position: Vector3,
-    _filler2: [u8; 584],
-    pub m_rigid_body: *const RigidBody,
-    _filler3: [u8; 40],
-    pub m_network_ball_sync: *const NetworkBallSync,
-    _filler4: [u8; 136],
-    pub force_field: *const GameObject,
+    _filler: [u8; 680],
+    pub rigid_body: *const RigidBody,
 }
 
 impl BallMovement {
@@ -393,36 +467,36 @@ impl BallMovement {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const BallMovement, *const MethodInfo) -> i32,
-            >(BASE_ADDRESS.offset(0x003ee9b0));
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("BallMovement_get_HoleNumber"))
+            );
             method(self, null())
         }
     }
 
-    pub fn rigid_body(&self) -> &RigidBody {
-        unsafe { &*self.fields.m_rigid_body }
+    pub fn last_ground_hit(&self) -> &Transform {
+        unsafe {
+            let method = std::mem::transmute::<
+                _,
+                extern "system" fn(*const BallMovement, *const MethodInfo) -> *const Transform,
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("BallMovement_get_LastGroundHit"))
+            );
+            &*method(self, null())
+        }
     }
 
-    pub fn network_sync(&self) -> &NetworkBallSync {
-        unsafe { &*self.fields.m_network_ball_sync }
+    pub fn rigid_body(&self) -> &RigidBody {
+        unsafe { &*self.fields.rigid_body }
     }
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Vector3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
-}
-
-impl Default for Vector3 {
-    fn default() -> Self {
-        Self {
-            x: 0.,
-            y: 0.,
-            z: 0.,
-        }
-    }
 }
 
 impl Vector3 {
@@ -435,30 +509,9 @@ impl Vector3 {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const Vector3, *const Vector3, *const MethodInfo) -> f32,
-            >(BASE_ADDRESS.offset(0x0153bcc0));
+            >(BASE_ADDRESS.offset(OFFSETS.method("Vector3_Distance")));
             method(self, other, null())
         }
-    }
-}
-
-#[repr(C)]
-pub struct NetworkBallSync {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub fields: NetworkBallSync__Fields,
-}
-
-#[repr(C)]
-pub struct NetworkBallSync__Fields {
-    _filler1: [u8; 208],
-    pub rb: *const u8,
-    pub bm: *const u8,
-    pub pv: *const PhotonView,
-}
-
-impl NetworkBallSync {
-    pub fn pv(&self) -> &PhotonView {
-        unsafe { &*self.fields.pv }
     }
 }
 
@@ -480,44 +533,6 @@ pub struct PhotonPlayer__Fields {
 }
 
 #[repr(C)]
-pub struct PhotonView {}
-
-impl PhotonView {
-    pub fn rpc(&self, name: &'static [u8], target: PhotonTargets, parameters: &Il2CppArray) {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(
-                    *const PhotonView,
-                    *const Il2CppString,
-                    i32,
-                    *const Il2CppArray,
-                    *const MethodInfo,
-                ),
-            >(BASE_ADDRESS.offset(0x010ed620));
-            method(
-                self,
-                il2cpp_string_new(name),
-                target as i32,
-                parameters,
-                null(),
-            );
-        }
-    }
-}
-
-#[repr(C)]
-pub enum PhotonTargets {
-    All,
-    Others,
-    MasterClient,
-    AllBuffered,
-    OthersBuffered,
-    AllViaServer,
-    AllBufferedViaServer,
-}
-
-#[repr(C)]
 pub struct RigidBody {
     pub klass: *const u8,
     pub monitor: *const u8,
@@ -529,19 +544,14 @@ pub struct RigidBody__Fields {}
 
 impl RigidBody {
     pub fn position(&self) -> Vector3 {
-        // unsafe {
-        //     let method = std::mem::transmute::<
-        //         _,
-        //         extern "system" fn(*const RigidBody, *const MethodInfo) -> Vector3,
-        //     >(BASE_ADDRESS.offset(0x01b64e70));
-        //     method(self, null())
-        // }
         let mut result = Vector3::new();
         unsafe {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const RigidBody, *mut Vector3, *const MethodInfo),
-            >(BASE_ADDRESS.offset(0x01b657c0));
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_get_position_Injected"))
+            );
             method(self, &mut result, null());
         }
         result
@@ -549,20 +559,22 @@ impl RigidBody {
 
     pub fn set_position(&self, position: &Vector3) {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
-            >(BASE_ADDRESS.offset(0x01b64ef0));
+            let method =
+                std::mem::transmute::<
+                    _,
+                    extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
+                >(BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_set_position")));
             method(self, position, null());
         }
     }
 
     pub fn set_velocity(&self, velocity: &Vector3) {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
-            >(BASE_ADDRESS.offset(0x01b648a0));
+            let method =
+                std::mem::transmute::<
+                    _,
+                    extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
+                >(BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_set_velocity")));
             method(self, velocity, null());
         }
     }
@@ -580,17 +592,20 @@ impl GameObject {
                     *const Il2CppString,
                     *const MethodInfo,
                 ) -> *const GameObject__Array,
-            >(BASE_ADDRESS.offset(0x013ad760));
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("GameObject_FindGameObjectsWithTag"))
+            );
             &*method(tag, null())
         }
     }
 
     pub fn transform(&self) -> &Transform {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const GameObject, *const MethodInfo) -> *const Transform,
-            >(BASE_ADDRESS.offset(0x013ad350));
+            let method =
+                std::mem::transmute::<
+                    _,
+                    extern "system" fn(*const GameObject, *const MethodInfo) -> *const Transform,
+                >(BASE_ADDRESS.offset(OFFSETS.method("GameObject_get_transform")));
             &*method(self, null())
         }
     }
@@ -620,7 +635,7 @@ impl GameObject__Array {
 pub struct Debug {}
 
 impl Debug {
-    pub fn draw_line(
+    pub fn draw_line_1(
         start: &Vector3,
         end: &Vector3,
         color: &Color,
@@ -638,7 +653,7 @@ impl Debug {
                     bool,
                     *const MethodInfo,
                 ),
-            >(BASE_ADDRESS.offset(0x013a3980));
+            >(BASE_ADDRESS.offset(OFFSETS.method("Debug_2_DrawLine_1")));
             method(start, end, color, duration, depth_test, null());
         }
     }
@@ -650,10 +665,11 @@ pub struct Transform {}
 impl Transform {
     pub fn position(&self) -> Vector3 {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const Transform, *const MethodInfo) -> Vector3,
-            >(BASE_ADDRESS.offset(0x01532640));
+            let method =
+                std::mem::transmute::<
+                    _,
+                    extern "system" fn(*const Transform, *const MethodInfo) -> Vector3,
+                >(BASE_ADDRESS.offset(OFFSETS.method("Transform_get_position")));
             method(self, null())
         }
     }
@@ -668,7 +684,7 @@ impl Camera {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const MethodInfo) -> *const Camera,
-            >(BASE_ADDRESS.offset(0x0139d0e0));
+            >(BASE_ADDRESS.offset(OFFSETS.method("Camera_get_main")));
             &*method(null())
         }
     }
@@ -678,17 +694,19 @@ impl Camera {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const MethodInfo) -> *const Camera,
-            >(BASE_ADDRESS.offset(0x0139d130));
+            >(BASE_ADDRESS.offset(OFFSETS.method("Camera_get_current")));
             &*method(null())
         }
     }
 
-    pub fn world_to_screen_point(&self, position: &Vector3) -> Vector3 {
+    pub fn world_to_screen_point_1(&self, position: &Vector3) -> Vector3 {
         unsafe {
             let method = std::mem::transmute::<
                 _,
                 extern "system" fn(*const Camera, *const Vector3, *const MethodInfo) -> Vector3,
-            >(BASE_ADDRESS.offset(0x0139cbd0));
+            >(
+                BASE_ADDRESS.offset(OFFSETS.method("Camera_WorldToScreenPoint_1"))
+            );
             method(self, position, null())
         }
     }
