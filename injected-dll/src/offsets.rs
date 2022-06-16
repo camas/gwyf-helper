@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, sync::RwLock};
 
 use serde::{de::Error, Deserialize, Deserializer};
 
@@ -6,12 +6,23 @@ const DEFAULT_OFFSET: isize = 0x180000000;
 
 lazy_static! {
     pub static ref OFFSETS: Metadata =
-        serde_json::from_str::<'_, Root>(include_str!("../../../il2cpp dumps/metadata.json"))
+        serde_json::from_str::<'_, Root>(include_str!("../../metadata.json"))
             .unwrap()
             .address_map;
-    static ref METHOD_DEFINITIONS_BY_NAME: Mutex<HashMap<String, MethodDefinition>> =
-        Mutex::new(HashMap::new());
-    static ref APIS_BY_NAME: Mutex<HashMap<String, Api>> = Mutex::new(HashMap::new());
+    static ref METHOD_DEFINITIONS_BY_NAME: RwLock<HashMap<String, isize>> = RwLock::new(
+        OFFSETS
+            .method_definitions
+            .iter()
+            .map(|m| (m.name.clone(), m.virtual_address))
+            .collect()
+    );
+    static ref APIS_BY_NAME: RwLock<HashMap<String, isize>> = RwLock::new(
+        OFFSETS
+            .apis
+            .iter()
+            .map(|m| (m.name.clone(), m.virtual_address))
+            .collect()
+    );
 }
 
 fn from_hex<'de, D>(deserializer: D) -> Result<isize, D::Error>
@@ -53,26 +64,14 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn method(&self, name: &str) -> isize {
-        let mut methods_by_name = METHOD_DEFINITIONS_BY_NAME.lock().unwrap();
-        if !methods_by_name.contains_key(name) {
-            let def = self
-                .method_definitions
-                .iter()
-                .find(|def| def.name == name)
-                .unwrap();
-            methods_by_name.insert(name.to_string(), def.clone());
-        }
-        methods_by_name[name].virtual_address - DEFAULT_OFFSET
+        let methods_by_name = METHOD_DEFINITIONS_BY_NAME.read().unwrap();
+        methods_by_name[name] - DEFAULT_OFFSET
     }
 
     pub fn api(&self, name: &str) -> isize {
-        let mut api_by_name = APIS_BY_NAME.lock().unwrap();
-        if !api_by_name.contains_key(name) {
-            let def = self.apis.iter().find(|def| def.name == name).unwrap();
-            api_by_name.insert(name.to_string(), def.clone());
-        }
+        let api_by_name = APIS_BY_NAME.read().unwrap();
         // Where does the magic 0xc00 offset come from???????????
-        api_by_name[name].virtual_address - DEFAULT_OFFSET - 0xc00
+        api_by_name[name] - DEFAULT_OFFSET - 0xc00
     }
 }
 
