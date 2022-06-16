@@ -116,7 +116,7 @@ pub fn draw_callback(ui: &Ui) {
 
     // Color copying
     if let Some((i, user_ptr)) = &state.player_to_copy {
-        if *i < users.len() && users[*i] as *const User == *user_ptr {
+        if *i < users.len() && std::ptr::eq(users[*i], *user_ptr) {
             let other = users[*i];
             if player.m_color() != other.m_color() {
                 player.set_color(other.m_color());
@@ -244,11 +244,11 @@ pub fn draw_callback(ui: &Ui) {
         }
     }
 
-    if let Some(token) = ui.begin_main_menu_bar() {
+    if let Some(_token) = ui.begin_main_menu_bar() {
         ui.text("gwyf helper 1.0 ");
 
         // ESP Settings
-        if let Some(token) = ui.begin_menu("esp") {
+        if let Some(_token) = ui.begin_menu("esp") {
             // Hole options
             ui.text("Hole esp:");
             ui.radio_button("None", &mut state.hole_setting, EspSetting::None);
@@ -256,9 +256,6 @@ pub fn draw_callback(ui: &Ui) {
             ui.radio_button("Lines", &mut state.hole_setting, EspSetting::Lines);
             Slider::new("Line opacity", 0., 1.).build(ui, &mut state.hole_line_opacity);
             Slider::new("Within range", 0., 1000.).build(ui, &mut state.hole_range);
-
-            // Cleanup
-            token.end();
         }
 
         // Hit button
@@ -268,7 +265,7 @@ pub fn draw_callback(ui: &Ui) {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, u)| {
-                    if *u as *const User != player as *const User && !u.fields.m_in_hole {
+                    if !std::ptr::eq(*u, player) && !u.m_in_hole() {
                         Some(i)
                     } else {
                         None
@@ -283,7 +280,7 @@ pub fn draw_callback(ui: &Ui) {
         }
 
         // Color copying selection
-        if let Some(token) = ui.begin_menu("Players:") {
+        if let Some(_token) = ui.begin_menu("Players:") {
             ui.text("Copy color of:");
             for (i, user) in users.iter().enumerate() {
                 ui.radio_button(
@@ -293,15 +290,12 @@ pub fn draw_callback(ui: &Ui) {
                 );
             }
             ui.radio_button("None", &mut state.player_to_copy, None);
-
-            // Cleanup
-            token.end();
         }
 
         // Player names
         // ui.text(format!("{} Players: ", users.len()));
         for user in users.iter() {
-            let c = &user.fields.m_colour;
+            let c = user.m_color();
             let c = [c.r, c.g, c.b, c.a];
             ui.text_colored(c, format!("{} ", user.display_name().read()));
         }
@@ -315,9 +309,6 @@ pub fn draw_callback(ui: &Ui) {
         ];
         ui.set_cursor_pos(new_pos);
         ui.text(text);
-
-        // Cleanup
-        token.end();
     }
 
     // Scoreboard
@@ -350,11 +341,11 @@ pub fn draw_callback(ui: &Ui) {
                 ui.next_column();
 
                 // Hit counts
-                if !user.fields.hole_scores.is_null() {
-                    let current_score = user.fields.m_hit_counter;
+                if let Some(hole_scores) = user.hole_scores() {
+                    let current_score = user.m_hit_counter();
                     let current_hole = user.ball().hole_number();
-                    let completed = user.fields.m_in_hole;
-                    let scores = user.hole_scores().values();
+                    let completed = user.m_in_hole();
+                    let scores = hole_scores.values();
 
                     for (i, score) in scores.iter().enumerate() {
                         match (i as i32 + 1).cmp(&current_hole) {

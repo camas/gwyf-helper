@@ -15,8 +15,24 @@ pub fn init() {
     unsafe {
         BASE_ADDRESS = module.base_addr as *const u8;
         info!("base addr: {:#018x}", BASE_ADDRESS as usize);
+
+        // Needs to be called before anything else
         il2cpp_thread_attach(il2cpp_domain_get());
     }
+}
+
+macro_rules! il2cpp_fn {
+    ($il2cpp_name:expr, ($($arg:ty), *) $(-> $return:ty)?) => {
+        std::mem::transmute::<_, extern "system" fn($($arg), *) $(-> $return)? >(
+            BASE_ADDRESS.offset(OFFSETS.method($il2cpp_name)),
+        )
+    }
+}
+
+macro_rules! il2cpp_field {
+    ($self:expr, $offset:expr, $type:ty) => {
+        *((&$self.fields as *const _ as *const u8).add($offset) as *const $type)
+    };
 }
 
 #[repr(C)]
@@ -27,107 +43,77 @@ pub struct Services {}
 impl Services {
     pub fn get_user() -> &'static UserService {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const MethodInfo) -> *const UserService,
-            >(BASE_ADDRESS.offset(OFFSETS.method("Services_get_Users")));
-            &*method(null())
+            &*il2cpp_fn!("Services_get_Users", (*const MethodInfo) -> *const UserService)(null())
         }
     }
 }
 
 #[repr(C)]
 pub struct User {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub fields: User__Fields,
-}
-
-#[repr(C)]
-pub struct User__Fields {
-    pub m_b_is_local: bool,
-    pub m_b_is_primary: bool,
-    pub m_photon_player: *const PhotonPlayer,
-    pub m_i_local_player_id: i32,
-    pub m_platform_id: *const u8,
-    pub m_display_name: *const Il2CppString,
-    pub profile_picture_backing_field: *const u8,
-    pub m_ball: *const u8,
-    pub m_player_camera: *const u8,
-    pub m_network_state: i32,
-    pub m_game_flow_state: i32,
-    pub m_loading_level_complete: i32,
-    pub m_fully_loaded: bool,
-    pub m_password: *const Il2CppString,
-    pub m_colour: Color,
-    pub m_customisation_items: *const u8,
-    pub m_hit_counter: i32,
-    pub m_in_hole: bool,
-    pub m_taking_penalty: bool,
-    pub hole_scores: *const Int32__Array,
+    klass: *const u8,
+    monitor: *const u8,
+    fields: *const u8,
 }
 
 impl User {
     pub fn display_name(&self) -> &Il2CppString {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const User, *const MethodInfo) -> *const Il2CppString,
-            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_DisplayName")));
-            &*method(self, null())
+            let function = il2cpp_fn!("User_get_DisplayName", (*const User, *const MethodInfo) -> *const Il2CppString);
+            &*function(self, null())
         }
     }
 
     pub fn ball(&self) -> &BallMovement {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const User, *const MethodInfo) -> *const BallMovement,
-            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_Ball")));
-            &*method(self, null())
+            let function = il2cpp_fn!("User_get_Ball", (*const User, *const MethodInfo) -> *const BallMovement);
+            &*function(self, null())
         }
-    }
-
-    pub fn hole_scores(&self) -> &Int32__Array {
-        unsafe { &*self.fields.hole_scores }
     }
 
     pub fn player_camera(&self) -> &CameraFollow {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const User, *const MethodInfo) -> *const CameraFollow,
-            >(BASE_ADDRESS.offset(OFFSETS.method("User_get_PlayerCamera")));
-            &*method(self, null())
+            let function = il2cpp_fn!("User_get_PlayerCamera", (*const User, *const MethodInfo) -> *const CameraFollow);
+            &*function(self, null())
         }
     }
 
     pub fn game_flow_state(&self) -> GameFlowUserState {
-        assert!(self.fields.m_game_flow_state <= GameFlowUserState::LevelEditor as i32);
-        unsafe { std::mem::transmute(self.fields.m_game_flow_state) }
+        unsafe {
+            let value = il2cpp_field!(self, 68, i32);
+            assert!(value <= GameFlowUserState::LevelEditor as i32);
+            std::mem::transmute(value)
+        }
     }
 
     pub fn set_color(&self, color: &Color) {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const User, *const Color, *const MethodInfo),
-            >(BASE_ADDRESS.offset(OFFSETS.method("User_set_Colour")));
-            method(self, color, null());
+            il2cpp_fn!(
+                "User_set_Colour",
+                (*const User, *const Color, *const MethodInfo)
+            )(self, color, null());
         }
     }
 
     pub fn update_properties(&self) {
         unsafe {
-            let method = std::mem::transmute::<_, extern "system" fn(*const User, *const MethodInfo)>(
-                BASE_ADDRESS.offset(OFFSETS.method("User_UpdateProperties")),
-            );
-            method(self, null());
+            il2cpp_fn!("User_UpdateProperties", (*const User, *const MethodInfo))(self, null());
         }
     }
 
     pub fn m_color(&self) -> &Color {
-        &self.fields.m_colour
+        unsafe { &il2cpp_field!(self, 88, Color) }
+    }
+
+    pub fn hole_scores(&self) -> Option<&Int32__Array> {
+        unsafe { il2cpp_field!(self, 120, *const Int32__Array).as_ref() }
+    }
+
+    pub fn m_in_hole(&self) -> bool {
+        unsafe { il2cpp_field!(self, 116, bool) }
+    }
+
+    pub fn m_hit_counter(&self) -> i32 {
+        unsafe { il2cpp_field!(self, 112, i32) }
     }
 }
 
@@ -165,21 +151,12 @@ pub enum GameFlowUserState {
 pub struct CameraFollow {
     pub klass: *const u8,
     pub monitor: *const u8,
-    pub fields: CameraFollow_Fields,
-}
-
-#[repr(C)]
-pub struct CameraFollow_Fields {
-    mono_behaviour_fields: *const u8,
-    hitpoint: *const GameObject,
-    pivot_point: *const GameObject,
-    filler1: [u8; 76],
-    player_pos: Vector3,
+    pub fields: *const u8,
 }
 
 impl CameraFollow {
     pub fn player_pos(&self) -> &Vector3 {
-        &self.fields.player_pos
+        unsafe { &il2cpp_field!(self, 100, Vector3) }
     }
 }
 
@@ -220,41 +197,30 @@ pub struct UserService {}
 impl UserService {
     pub fn primary_local_user(&self) -> Option<&User> {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const UserService, *const MethodInfo) -> *const User,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("UserService_GetPrimaryLocalUser"))
-            );
-            method(self, null()).as_ref()
+            let function = il2cpp_fn!("UserService_GetPrimaryLocalUser", (*const UserService, *const MethodInfo) -> *const User);
+            function(self, null()).as_ref()
         }
     }
 
     pub fn get_users(&self) -> (&User__Array, i32) {
-        let mut count = 0;
         unsafe {
-            let addr = BASE_ADDRESS.offset(OFFSETS.method("UserService_GetUsers"));
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(
-                    *const UserService,
-                    *mut i32,
-                    *const MethodInfo,
-                ) -> *const User__Array,
-            >(addr);
-            let user_array = method(self, &mut count, null());
-            (&*user_array, count)
+            let mut count = 0;
+            let function = il2cpp_fn!(
+                "UserService_GetUsers",
+                (*const UserService, *mut i32, *const MethodInfo) -> *const User__Array);
+            let result = function(self, &mut count, null());
+            (&*result, count)
         }
     }
 }
 
 #[repr(C)]
 pub struct User__Array {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub bounds: *const u8,
-    pub max_length: u64,
-    pub vector: [*const User; 32],
+    klass: *const u8,
+    monitor: *const u8,
+    bounds: *const u8,
+    max_length: u64,
+    vector: [*const User; 32],
 }
 
 impl User__Array {
@@ -269,11 +235,11 @@ impl User__Array {
 
 #[repr(C)]
 pub struct Int32__Array {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub bounds: *const u8,
-    pub max_length: u64,
-    pub vector: i32,
+    klass: *const u8,
+    monitor: *const u8,
+    bounds: *const u8,
+    max_length: u64,
+    vector: i32,
 }
 
 impl Int32__Array {
@@ -284,32 +250,21 @@ impl Int32__Array {
 
 #[repr(C)]
 pub struct BallMovement {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub fields: BallMovement__Fields,
-}
-
-#[repr(C)]
-pub struct BallMovement__Fields {
-    _filler: [u8; 680],
-    pub rigid_body: *const RigidBody,
+    klass: *const u8,
+    monitor: *const u8,
+    fields: *const u8,
 }
 
 impl BallMovement {
     pub fn hole_number(&self) -> i32 {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const BallMovement, *const MethodInfo) -> i32,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("BallMovement_get_HoleNumber"))
-            );
-            method(self, null())
+            let function = il2cpp_fn!("BallMovement_get_HoleNumber", (*const BallMovement, *const MethodInfo) -> i32);
+            function(self, null())
         }
     }
 
     pub fn rigid_body(&self) -> &RigidBody {
-        unsafe { &*self.fields.rigid_body }
+        unsafe { &*il2cpp_field!(self, 680, *const RigidBody) }
     }
 }
 
@@ -328,76 +283,49 @@ impl Vector3 {
 
     pub fn distance(&self, other: &Vector3) -> f32 {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const Vector3, *const Vector3, *const MethodInfo) -> f32,
-            >(BASE_ADDRESS.offset(OFFSETS.method("Vector3_Distance")));
-            method(self, other, null())
+            let function = il2cpp_fn!("Vector3_Distance", (*const Vector3, *const Vector3, *const MethodInfo) -> f32);
+            function(self, other, null())
         }
     }
 }
 
 #[repr(C)]
-pub struct PhotonPlayer {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub fields: PhotonPlayer__Fields,
-}
-
-#[repr(C)]
-pub struct PhotonPlayer__Fields {
-    pub actor_id: i32,
-    pub name_field: *const Il2CppString,
-    pub used_id_backing_field: *const Il2CppString,
-    pub is_local: bool,
-    pub in_inactive_backing_field: bool,
-    pub tag_object: *const u8,
-}
-
-#[repr(C)]
 pub struct RigidBody {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub fields: RigidBody__Fields,
+    klass: *const u8,
+    monitor: *const u8,
+    fields: *const u8,
 }
-
-#[repr(C)]
-pub struct RigidBody__Fields {}
 
 impl RigidBody {
     pub fn position(&self) -> Vector3 {
         let mut result = Vector3::new();
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const RigidBody, *mut Vector3, *const MethodInfo),
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_get_position_Injected"))
+            let function = il2cpp_fn!(
+                "Rigidbody_get_position_Injected",
+                (*const RigidBody, *mut Vector3, *const MethodInfo)
             );
-            method(self, &mut result, null());
+            function(self, &mut result, null());
         }
         result
     }
 
     pub fn set_position(&self, position: &Vector3) {
         unsafe {
-            let method =
-                std::mem::transmute::<
-                    _,
-                    extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
-                >(BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_set_position")));
-            method(self, position, null());
+            let function = il2cpp_fn!(
+                "Rigidbody_set_position",
+                (*const RigidBody, *const Vector3, *const MethodInfo)
+            );
+            function(self, position, null());
         }
     }
 
     pub fn set_velocity(&self, velocity: &Vector3) {
         unsafe {
-            let method =
-                std::mem::transmute::<
-                    _,
-                    extern "system" fn(*const RigidBody, *const Vector3, *const MethodInfo),
-                >(BASE_ADDRESS.offset(OFFSETS.method("Rigidbody_set_velocity")));
-            method(self, velocity, null());
+            let function = il2cpp_fn!(
+                "Rigidbody_set_velocity",
+                (*const RigidBody, *const Vector3, *const MethodInfo)
+            );
+            function(self, velocity, null());
         }
     }
 }
@@ -408,38 +336,30 @@ pub struct GameObject {}
 impl GameObject {
     pub fn find_game_objects_with_tag(tag: &Il2CppString) -> &GameObject__Array {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(
-                    *const Il2CppString,
-                    *const MethodInfo,
-                ) -> *const GameObject__Array,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("GameObject_FindGameObjectsWithTag"))
-            );
-            &*method(tag, null())
+            let function = il2cpp_fn!(
+                "GameObject_FindGameObjectsWithTag",
+                (*const Il2CppString, *const MethodInfo) -> *const GameObject__Array);
+            &*function(tag, null())
         }
     }
 
     pub fn transform(&self) -> &Transform {
         unsafe {
-            let method =
-                std::mem::transmute::<
-                    _,
-                    extern "system" fn(*const GameObject, *const MethodInfo) -> *const Transform,
-                >(BASE_ADDRESS.offset(OFFSETS.method("GameObject_get_transform")));
-            &*method(self, null())
+            let function = il2cpp_fn!(
+                "GameObject_get_transform",
+                (*const GameObject, *const MethodInfo) -> *const Transform);
+            &*function(self, null())
         }
     }
 }
 
 #[repr(C)]
 pub struct GameObject__Array {
-    pub klass: *const u8,
-    pub monitor: *const u8,
-    pub bounds: *const u8,
-    pub max_length: u64,
-    pub vector: *const GameObject,
+    klass: *const u8,
+    monitor: *const u8,
+    bounds: *const u8,
+    max_length: u64,
+    vector: *const GameObject,
 }
 
 impl GameObject__Array {
@@ -459,12 +379,10 @@ pub struct Transform {}
 impl Transform {
     pub fn position(&self) -> Vector3 {
         unsafe {
-            let method =
-                std::mem::transmute::<
-                    _,
-                    extern "system" fn(*const Transform, *const MethodInfo) -> Vector3,
-                >(BASE_ADDRESS.offset(OFFSETS.method("Transform_get_position")));
-            method(self, null())
+            let function = il2cpp_fn!(
+                "Transform_get_position",
+                (*const Transform, *const MethodInfo) -> Vector3);
+            function(self, null())
         }
     }
 }
@@ -475,23 +393,17 @@ pub struct Camera {}
 impl Camera {
     pub fn main() -> &'static Camera {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const MethodInfo) -> *const Camera,
-            >(BASE_ADDRESS.offset(OFFSETS.method("Camera_get_main")));
-            &*method(null())
+            let function = il2cpp_fn!("Camera_get_main", (*const MethodInfo) -> *const Camera);
+            &*function(null())
         }
     }
 
     pub fn world_to_screen_point_1(&self, position: &Vector3) -> Vector3 {
         unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const Camera, *const Vector3, *const MethodInfo) -> Vector3,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("Camera_WorldToScreenPoint_1"))
-            );
-            method(self, position, null())
+            let function = il2cpp_fn!(
+                "Camera_WorldToScreenPoint_1",
+                (*const Camera, *const Vector3, *const MethodInfo) -> Vector3);
+            function(self, position, null())
         }
     }
 }
