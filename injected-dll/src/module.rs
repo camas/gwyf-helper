@@ -66,6 +66,7 @@ impl Module {
     }
 
     /// Searches the module address space for the first instance of the signature
+    #[allow(dead_code)]
     pub unsafe fn find_sig(&self, signature: Signature) -> usize {
         (self.base_addr..(self.base_addr + self.length - signature.len()))
             .find(|&i| {

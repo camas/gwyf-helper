@@ -1,5 +1,7 @@
+#[allow(dead_code)]
 pub type Signature = Vec<Option<u8>>;
 
+#[allow(unused_macros)]
 macro_rules! signature {
     ($sig:expr) => {{
         let parts = $sig.split(' ');

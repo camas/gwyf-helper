@@ -2,7 +2,11 @@ use std::ptr::null;
 
 use log::info;
 
-use crate::{module::Module, offsets::OFFSETS};
+use crate::{
+    api::{il2cpp_domain_get, il2cpp_thread_attach},
+    module::Module,
+    offsets::OFFSETS,
+};
 
 pub static mut BASE_ADDRESS: *const u8 = null();
 
@@ -11,20 +15,8 @@ pub fn init() {
     unsafe {
         BASE_ADDRESS = module.base_addr as *const u8;
         info!("base addr: {:#018x}", BASE_ADDRESS as usize);
-        let il2cpp_domain_get = std::mem::transmute::<_, extern "system" fn() -> *const u8>(
-            BASE_ADDRESS.offset(OFFSETS.api("il2cpp_domain_get")),
-        );
-        let il2cpp_thread_attach = std::mem::transmute::<_, extern "system" fn(*const u8)>(
-            BASE_ADDRESS.offset(OFFSETS.api("il2cpp_thread_attach")),
-        );
         il2cpp_thread_attach(il2cpp_domain_get());
     }
-}
-
-#[repr(C)]
-pub struct VirtualInvokeData {
-    method_ptr: *const u8,
-    method: *const MethodInfo,
 }
 
 #[repr(C)]
@@ -41,160 +33,6 @@ impl Services {
             >(BASE_ADDRESS.offset(OFFSETS.method("Services_get_Users")));
             &*method(null())
         }
-    }
-
-    pub fn get_game_state() -> &'static GameStateController {
-        unsafe {
-            let method =
-                std::mem::transmute::<
-                    _,
-                    extern "system" fn(*const MethodInfo) -> *const GameStateController,
-                >(BASE_ADDRESS.offset(OFFSETS.method("Services_get_GameState")));
-            &*method(null())
-        }
-    }
-}
-
-#[repr(C)]
-pub struct GameStateController {}
-
-impl GameStateController {
-    pub fn get_current_state(&self) -> &'static GameState {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(
-                    *const GameStateController,
-                    *const MethodInfo,
-                ) -> *const GameState,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("GameStateController_get_CurrentState")),
-            );
-            &*method(self, null())
-        }
-    }
-}
-
-#[repr(C)]
-pub struct GameState {
-    pub klass: *const GameState__Class,
-}
-
-impl GameState {
-    pub fn klass(&self) -> &'static GameState__Class {
-        unsafe { &*self.klass }
-    }
-}
-
-#[repr(C)]
-pub struct GameState__Class {
-    _filler1: [u8; 184],
-    pub static_fields: *const GameState__StaticFields,
-}
-
-impl GameState__Class {
-    pub fn static_fields(&self) -> &GameState__StaticFields {
-        unsafe { &*self.static_fields }
-    }
-}
-
-#[repr(C)]
-pub struct GameState__StaticFields {
-    pub shared_context_info: *const GameContextInformation,
-}
-
-impl GameState__StaticFields {
-    pub fn shared_context_info(&self) -> &GameContextInformation {
-        unsafe { &*self.shared_context_info }
-    }
-}
-
-#[repr(C)]
-pub struct GameContextInformation {
-    _filler1: [u8; 16],
-    pub online_data: OnlineStateInformation,
-    pub region_infos: *const u8,
-    pub session_infos: *const u8,
-    pub session_filter: *const u8,
-    pub session_settings: *const u8,
-    pub session_info: SessionInfo,
-    pub user_infos: *const UserInfosData,
-    pub game_management: *const u8,
-    pub gameplay_settings: *const u8,
-    pub game_mode_datas: *const u8,
-    pub options: *const u8,
-    pub level_editor: *const u8,
-}
-
-impl GameContextInformation {
-    pub fn user_infos(&self) -> &UserInfosData {
-        unsafe { &*self.user_infos }
-    }
-}
-
-#[repr(C)]
-pub struct SessionInfo {
-    pub room_info_backing_field: *const u8,
-}
-
-impl SessionInfo {}
-
-#[repr(C)]
-pub struct OnlineStateInformation {
-    pub connection_region: i32,
-    pub local_player_account_details: *const u8,
-    pub local_player_id: *const u8,
-}
-
-#[repr(C)]
-pub struct UserInfosData {
-    pub klass: *const UserInfosData__Class,
-}
-
-#[repr(C)]
-pub struct UserInfosData__Class {
-    _filler: [u8; 304],
-    pub vtable: UserInfosData__VTable,
-}
-
-#[repr(C)]
-pub struct UserInfosData__VTable {
-    _filler1: [u8; 64],
-    pub get_item: VirtualInvokeData,
-    _filler2: [u8; 64],
-    pub get_count: VirtualInvokeData,
-}
-
-impl UserInfosData {
-    pub fn count(&self) -> i32 {
-        unsafe {
-            let vid = &(*self.klass).vtable.get_count;
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const UserInfosData, *const MethodInfo) -> i32,
-            >(vid.method_ptr);
-            method(self, vid.method)
-        }
-    }
-
-    pub fn get(&self, index: i32) -> &UserInfo {
-        unsafe {
-            let vid = &(*self.klass).vtable.get_item;
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const UserInfosData, i32, *const MethodInfo) -> *const UserInfo,
-            >(vid.method_ptr);
-            &*method(self, index, vid.method)
-        }
-    }
-}
-
-#[repr(C)]
-pub struct UserInfo {}
-
-impl UserInfo {
-    pub fn user(&self) -> &User {
-        unsafe { &*(self as *const _ as *const User) }
     }
 }
 
@@ -254,10 +92,6 @@ impl User {
         unsafe { &*self.fields.hole_scores }
     }
 
-    pub fn photon_player(&self) -> &PhotonPlayer {
-        unsafe { &*self.fields.m_photon_player }
-    }
-
     pub fn player_camera(&self) -> &CameraFollow {
         unsafe {
             let method = std::mem::transmute::<
@@ -291,9 +125,13 @@ impl User {
             method(self, null());
         }
     }
+
+    pub fn m_color(&self) -> &Color {
+        &self.fields.m_colour
+    }
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, dead_code)]
 #[repr(C)]
 #[derive(Debug)]
 pub enum GameFlowUserState {
@@ -332,20 +170,16 @@ pub struct CameraFollow {
 
 #[repr(C)]
 pub struct CameraFollow_Fields {
-    pub mono_behaviour_fields: *const u8,
-    pub hitpoint: *const GameObject,
-    pub pivot_point: *const GameObject,
+    mono_behaviour_fields: *const u8,
+    hitpoint: *const GameObject,
+    pivot_point: *const GameObject,
     filler1: [u8; 76],
-    pub player_pos: Vector3,
+    player_pos: Vector3,
 }
 
 impl CameraFollow {
-    pub fn pivot_point(&self) -> &GameObject {
-        unsafe { &*self.fields.pivot_point }
-    }
-
-    pub fn hitpoint(&self) -> &GameObject {
-        unsafe { &*self.fields.hitpoint }
+    pub fn player_pos(&self) -> &Vector3 {
+        &self.fields.player_pos
     }
 }
 
@@ -471,18 +305,6 @@ impl BallMovement {
                 BASE_ADDRESS.offset(OFFSETS.method("BallMovement_get_HoleNumber"))
             );
             method(self, null())
-        }
-    }
-
-    pub fn last_ground_hit(&self) -> &Transform {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const BallMovement, *const MethodInfo) -> *const Transform,
-            >(
-                BASE_ADDRESS.offset(OFFSETS.method("BallMovement_get_LastGroundHit"))
-            );
-            &*method(self, null())
         }
     }
 
@@ -632,34 +454,6 @@ impl GameObject__Array {
 }
 
 #[repr(C)]
-pub struct Debug {}
-
-impl Debug {
-    pub fn draw_line_1(
-        start: &Vector3,
-        end: &Vector3,
-        color: &Color,
-        duration: f32,
-        depth_test: bool,
-    ) {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(
-                    *const Vector3,
-                    *const Vector3,
-                    *const Color,
-                    f32,
-                    bool,
-                    *const MethodInfo,
-                ),
-            >(BASE_ADDRESS.offset(OFFSETS.method("Debug_2_DrawLine_1")));
-            method(start, end, color, duration, depth_test, null());
-        }
-    }
-}
-
-#[repr(C)]
 pub struct Transform {}
 
 impl Transform {
@@ -685,16 +479,6 @@ impl Camera {
                 _,
                 extern "system" fn(*const MethodInfo) -> *const Camera,
             >(BASE_ADDRESS.offset(OFFSETS.method("Camera_get_main")));
-            &*method(null())
-        }
-    }
-
-    pub fn current() -> &'static Camera {
-        unsafe {
-            let method = std::mem::transmute::<
-                _,
-                extern "system" fn(*const MethodInfo) -> *const Camera,
-            >(BASE_ADDRESS.offset(OFFSETS.method("Camera_get_current")));
             &*method(null())
         }
     }

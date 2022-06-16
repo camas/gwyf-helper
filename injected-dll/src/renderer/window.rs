@@ -36,15 +36,17 @@ pub const BASE_DPI: u32 = 96;
 
 pub struct Window {
     hwnd: HWND,
-    cursor_flags: CursorFlags,
+    _cursor_flags: CursorFlags,
     scale_factor: f64,
 }
 
+// TODO: mouse support
+#[allow(dead_code)]
 impl Window {
     pub fn from_hwnd(hwnd: HWND) -> Self {
         let mut result = Self {
             hwnd,
-            cursor_flags: CursorFlags::empty(),
+            _cursor_flags: CursorFlags::empty(),
             scale_factor: 0.,
         };
         result.scale_factor = dpi_to_scale_factor(unsafe { result.hwnd_dpi() });
@@ -98,7 +100,7 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_cursor_icon(&self, cursor: CursorIcon) {
+    pub fn set_cursor_icon(&self, _cursor: CursorIcon) {
         println!("set_cursor_icon call ignored");
     }
 
@@ -106,12 +108,12 @@ impl Window {
     where
         F: FnOnce(&mut CursorFlags),
     {
-        let old_flags = self.cursor_flags;
-        f(&mut self.cursor_flags);
+        let old_flags = self._cursor_flags;
+        f(&mut self._cursor_flags);
         match self.refresh_os_cursor() {
             Ok(()) => (),
             Err(e) => {
-                self.cursor_flags = old_flags;
+                self._cursor_flags = old_flags;
                 return Err(e);
             }
         }
@@ -123,7 +125,7 @@ impl Window {
         let client_rect = self.get_client_rect()?;
 
         if self.is_focused() {
-            let cursor_clip = match self.cursor_flags.contains(CursorFlags::GRABBED) {
+            let cursor_clip = match self._cursor_flags.contains(CursorFlags::GRABBED) {
                 true => Some(client_rect),
                 false => None,
             };
@@ -145,9 +147,9 @@ impl Window {
             }
         }
 
-        let cursor_in_client = self.cursor_flags.contains(CursorFlags::IN_WINDOW);
+        let cursor_in_client = self._cursor_flags.contains(CursorFlags::IN_WINDOW);
         if cursor_in_client {
-            set_cursor_hidden(self.cursor_flags.contains(CursorFlags::HIDDEN));
+            set_cursor_hidden(self._cursor_flags.contains(CursorFlags::HIDDEN));
         } else {
             set_cursor_hidden(false);
         }

@@ -118,8 +118,8 @@ pub fn draw_callback(ui: &Ui) {
     if let Some((i, user_ptr)) = &state.player_to_copy {
         if *i < users.len() && users[*i] as *const User == *user_ptr {
             let other = users[*i];
-            if player.fields.m_colour != other.fields.m_colour {
-                player.set_color(&other.fields.m_colour);
+            if player.m_color() != other.m_color() {
+                player.set_color(other.m_color());
                 player.update_properties();
             }
         } else {
@@ -158,7 +158,7 @@ pub fn draw_callback(ui: &Ui) {
     // Player esp
     if playing && state.player_setting != EspSetting::None {
         // Get player position for calculating distance to holes
-        let player_pos = &player.player_camera().fields.player_pos;
+        let player_pos = &player.player_camera().player_pos();
 
         // Draw lines from bottom of screen
         let from = [screen_width / 2., screen_height];
@@ -208,7 +208,7 @@ pub fn draw_callback(ui: &Ui) {
         let holes = GameObject::find_game_objects_with_tag(il2cpp_string_new(b"Hole\0"));
 
         // Get player position for calculating distance to holes
-        let player_pos = &player.player_camera().fields.player_pos;
+        let player_pos = &player.player_camera().player_pos();
 
         // Draw lines from bottom of screen
         let from = [screen_width / 2., screen_height];
