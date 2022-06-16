@@ -4,7 +4,7 @@ use std::{ffi::c_void, time::Instant};
 
 use api::il2cpp_string_new;
 use gamestructs::{Camera, GameFlowUserState, GameObject, Services, User, Vector3};
-use imgui::{Condition, ImString, Slider, Ui, Window};
+use imgui::{Condition, Slider, Ui, Window};
 use log::{info, LevelFilter};
 use simplelog::{ColorChoice, CombinedLogger, TermLogger, TerminalMode};
 use winapi::{
@@ -188,11 +188,7 @@ pub fn draw_callback(ui: &Ui) {
                 .add_circle([to.x, screen_height - to.y], 2., [0., 0., 1., 1.])
                 .build();
 
-            let text = ImString::new(format!(
-                "{} {:.1}m",
-                other_player.display_name().read(),
-                distance
-            ));
+            let text = format!("{} {:.1}m", other_player.display_name().read(), distance);
             let text_width = ui.calc_text_size(&text)[0];
             draw_list.add_text(
                 [to.x - (text_width / 2.), screen_height - to.y - 20.],
@@ -234,7 +230,7 @@ pub fn draw_callback(ui: &Ui) {
                 .add_circle([to.x, screen_height - to.y], 2., [1., 0., 0., 1.])
                 .build();
 
-            let text = ImString::new(format!("{:.1}m", distance));
+            let text = format!("{:.1}m", distance);
             let text_width = ui.calc_text_size(&text)[0];
             draw_list.add_text(
                 [to.x - (text_width / 2.), screen_height - to.y - 20.],
@@ -284,7 +280,7 @@ pub fn draw_callback(ui: &Ui) {
             ui.text("Copy color of:");
             for (i, user) in users.iter().enumerate() {
                 ui.radio_button(
-                    &ImString::new(user.display_name().read()),
+                    &user.display_name().read(),
                     &mut state.player_to_copy,
                     Some((i, *user)),
                 );
@@ -301,7 +297,7 @@ pub fn draw_callback(ui: &Ui) {
         }
 
         // FlowState
-        let text = ImString::new(format!("{:?}", flow_state));
+        let text = format!("{:?}", flow_state);
         let size = ui.calc_text_size(&text);
         let new_pos = [
             ui.cursor_pos()[0] + ui.column_width(0) - size[0],
