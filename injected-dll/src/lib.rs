@@ -167,9 +167,9 @@ pub fn draw_callback(ui: &Ui) {
             .filter(|u| **u as *const _ != player as *const _)
         {
             // let obj_pos = other_player.ball().last_ground_hit().position();
-            let obj_pos = other_player.ball().rigid_body().position();
-            let to = camera.world_to_screen_point_1(&obj_pos);
-            let distance = player_pos.distance(&obj_pos);
+            let obj_pos = other_player.ball().network_ball_sync().current_position();
+            let to = camera.world_to_screen_point_1(obj_pos);
+            let distance = player_pos.distance(obj_pos);
             // Ignore if behind camera
             if to.z < 0. {
                 continue;

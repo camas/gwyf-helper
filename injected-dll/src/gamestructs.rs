@@ -266,6 +266,23 @@ impl BallMovement {
     pub fn rigid_body(&self) -> &RigidBody {
         unsafe { &*il2cpp_field!(self, 680, *const RigidBody) }
     }
+
+    pub fn network_ball_sync(&self) -> &NetworkBallSync {
+        unsafe { &*il2cpp_field!(self, 728, *const NetworkBallSync) }
+    }
+}
+
+#[repr(C)]
+pub struct NetworkBallSync {
+    klass: *const u8,
+    monitor: *const u8,
+    fields: *const u8,
+}
+
+impl NetworkBallSync {
+    pub fn current_position(&self) -> &Vector3 {
+        unsafe { &il2cpp_field!(self, 60, Vector3) }
+    }
 }
 
 #[repr(C)]
@@ -301,10 +318,10 @@ impl RigidBody {
         let mut result = Vector3::new();
         unsafe {
             let function = il2cpp_fn!(
-                "Rigidbody_get_position_Injected",
-                (*const RigidBody, *mut Vector3, *const MethodInfo)
+                "Rigidbody_get_position",
+                (*mut Vector3, *const RigidBody, *const MethodInfo)
             );
-            function(self, &mut result, null());
+            function(&mut result, self, null());
         }
         result
     }
