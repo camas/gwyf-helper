@@ -1,6 +1,3 @@
 [workspace]
-
-members = [
-    "gwyf-helper",
-    "injected-dll"
-]
+resolver = "2"
+members = ["gwyf-helper", "injected-dll"]

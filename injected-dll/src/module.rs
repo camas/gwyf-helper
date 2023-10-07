@@ -10,8 +10,6 @@ use winapi::{
     },
 };
 
-use crate::signature::Signature;
-
 pub struct Module {
     _name: String,
     pub base_addr: usize,
@@ -20,7 +18,7 @@ pub struct Module {
 
 impl Module {
     /// Waits for the specified module to load
-    pub fn new(name: &str) -> Self {
+    pub fn find(name: &str) -> Self {
         // Encode name
         let sent_name = name
             .encode_utf16()
@@ -44,7 +42,7 @@ impl Module {
             GetModuleInformation(
                 process,
                 handle,
-                &mut module_info as *mut _ as *mut MODULEINFO,
+                &mut module_info as *mut _,
                 mem::size_of::<MODULEINFO>() as u32,
             )
         } != TRUE
@@ -63,19 +61,5 @@ impl Module {
     pub fn _get_proc_address(&self, proc_name: &str) -> usize {
         let proc_name = CString::new(proc_name).unwrap();
         unsafe { GetProcAddress(self.base_addr as *mut _, proc_name.as_ptr()) as usize }
-    }
-
-    /// Searches the module address space for the first instance of the signature
-    #[allow(dead_code)]
-    pub unsafe fn find_sig(&self, signature: Signature) -> usize {
-        (self.base_addr..(self.base_addr + self.length - signature.len()))
-            .find(|&i| {
-                (i..(i + signature.len()))
-                    .zip(signature.iter())
-                    .all(|(address, to_match)| {
-                        to_match.is_none() || to_match.unwrap() == *(address as *mut u8)
-                    })
-            })
-            .expect("Couldn't find signature")
     }
 }

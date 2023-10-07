@@ -5,13 +5,13 @@ use log::info;
 use crate::{
     api::{il2cpp_domain_get, il2cpp_thread_attach},
     module::Module,
-    offsets::OFFSETS,
+    offsets::method_offset,
 };
 
 pub static mut BASE_ADDRESS: *const u8 = null();
 
 pub fn init() {
-    let module = Module::new("GameAssembly.dll");
+    let module = Module::find("GameAssembly.dll");
     unsafe {
         BASE_ADDRESS = module.base_addr as *const u8;
         info!("base addr: {:#018x}", BASE_ADDRESS as usize);
@@ -22,28 +22,33 @@ pub fn init() {
 }
 
 macro_rules! il2cpp_fn {
-    ($il2cpp_name:expr, ($($arg:ty), *) $(-> $return:ty)?) => {
+    ($il2cpp_name:ident, ($($arg:ty), *) $(-> $return:ty)?) => {
         std::mem::transmute::<_, extern "system" fn($($arg), *) $(-> $return)? >(
-            BASE_ADDRESS.offset(OFFSETS.method($il2cpp_name)),
+            BASE_ADDRESS.offset(method_offset!($il2cpp_name)),
         )
     }
 }
 
 macro_rules! il2cpp_field {
     ($self:expr, $offset:expr, $type:ty) => {
-        *((&$self.fields as *const _ as *const u8).add($offset) as *const $type)
+        ((&$self.fields as *const _ as *const u8).add($offset) as *const $type)
+            .as_ref()
+            .unwrap()
     };
 }
 
 #[repr(C)]
 pub struct MethodInfo {}
 
+#[repr(C)]
 pub struct Services {}
 
 impl Services {
-    pub fn get_user() -> &'static UserService {
+    pub fn get_users() -> &'static UserService {
         unsafe {
-            &*il2cpp_fn!("Services_get_Users", (*const MethodInfo) -> *const UserService)(null())
+            il2cpp_fn!(Services_get_Users, (*const MethodInfo) -> *const UserService)(null())
+                .as_ref()
+                .unwrap()
         }
     }
 }
@@ -58,29 +63,29 @@ pub struct User {
 impl User {
     pub fn display_name(&self) -> &Il2CppString {
         unsafe {
-            let function = il2cpp_fn!("User_get_DisplayName", (*const User, *const MethodInfo) -> *const Il2CppString);
-            &*function(self, null())
+            let function = il2cpp_fn!(User_1_get_DisplayName, (*const User, *const MethodInfo) -> *const Il2CppString);
+            function(self, null()).as_ref().unwrap()
         }
     }
 
-    pub fn ball(&self) -> &BallMovement {
+    pub fn ball(&self) -> Option<&BallMovement> {
         unsafe {
-            let function = il2cpp_fn!("User_get_Ball", (*const User, *const MethodInfo) -> *const BallMovement);
-            &*function(self, null())
+            let function = il2cpp_fn!(User_1_get_Ball, (*const User, *const MethodInfo) -> *const BallMovement);
+            function(self, null()).as_ref()
         }
     }
 
     pub fn player_camera(&self) -> &CameraFollow {
         unsafe {
-            let function = il2cpp_fn!("User_get_PlayerCamera", (*const User, *const MethodInfo) -> *const CameraFollow);
-            &*function(self, null())
+            let function = il2cpp_fn!(User_1_get_PlayerCamera, (*const User, *const MethodInfo) -> *const CameraFollow);
+            function(self, null()).as_ref().unwrap()
         }
     }
 
-    pub fn game_flow_state(&self) -> GameFlowUserState {
+    pub fn game_flow_state(&self) -> &GameFlowUserState {
         unsafe {
-            let value = il2cpp_field!(self, 68, i32);
-            assert!(value <= GameFlowUserState::LevelEditor as i32);
+            let value = il2cpp_field!(self, 84, i32);
+            assert!(*value <= GameFlowUserState::LevelEditor as i32);
             std::mem::transmute(value)
         }
     }
@@ -88,7 +93,7 @@ impl User {
     pub fn set_color(&self, color: &Color) {
         unsafe {
             il2cpp_fn!(
-                "User_set_Colour",
+                User_1_set_Colour,
                 (*const User, *const Color, *const MethodInfo)
             )(self, color, null());
         }
@@ -96,24 +101,24 @@ impl User {
 
     pub fn update_properties(&self) {
         unsafe {
-            il2cpp_fn!("User_UpdateProperties", (*const User, *const MethodInfo))(self, null());
+            il2cpp_fn!(User_1_UpdateProperties, (*const User, *const MethodInfo))(self, null());
         }
     }
 
     pub fn m_color(&self) -> &Color {
-        unsafe { &il2cpp_field!(self, 88, Color) }
+        unsafe { il2cpp_field!(self, 104, Color) }
     }
 
     pub fn hole_scores(&self) -> Option<&Int32__Array> {
-        unsafe { il2cpp_field!(self, 120, *const Int32__Array).as_ref() }
+        unsafe { il2cpp_field!(self, 136, *const Int32__Array).as_ref() }
     }
 
     pub fn m_in_hole(&self) -> bool {
-        unsafe { il2cpp_field!(self, 116, bool) }
+        unsafe { *il2cpp_field!(self, 132, bool) }
     }
 
     pub fn m_hit_counter(&self) -> i32 {
-        unsafe { il2cpp_field!(self, 112, i32) }
+        unsafe { *il2cpp_field!(self, 128, i32) }
     }
 }
 
@@ -156,7 +161,7 @@ pub struct CameraFollow {
 
 impl CameraFollow {
     pub fn player_pos(&self) -> &Vector3 {
-        unsafe { &il2cpp_field!(self, 100, Vector3) }
+        unsafe { il2cpp_field!(self, 100, Vector3) }
     }
 }
 
@@ -195,26 +200,34 @@ pub struct Color {
 pub struct UserService {}
 
 impl UserService {
-    pub fn primary_local_user(&self) -> Option<&User> {
-        unsafe {
-            let function = il2cpp_fn!("UserService_GetPrimaryLocalUser", (*const UserService, *const MethodInfo) -> *const User);
-            function(self, null()).as_ref()
-        }
-    }
+    // pub fn primary_local_user(&self) -> Option<&User> {
+    //     unsafe {
+    //         let function = il2cpp_fn!(UserService_GetPrimaryLocalUser, (*const UserService, *const MethodInfo) -> *const User);
+    //         function(self, null()).as_ref()
+    //     }
+    // }
 
     pub fn get_users(&self) -> (&User__Array, i32) {
         unsafe {
             let mut count = 0;
             let function = il2cpp_fn!(
-                "UserService_GetUsers",
+                UserService_GetUsers,
                 (*const UserService, *mut i32, *const MethodInfo) -> *const User__Array);
             let result = function(self, &mut count, null());
-            (&*result, count)
+            (result.as_ref().unwrap(), count)
+        }
+    }
+
+    pub fn get_in_control_player(&self) -> Option<&User> {
+        unsafe {
+            let function = il2cpp_fn!(UserService_GetInControlPlayer, (*const UserService, *const MethodInfo) -> *const User);
+            function(self, null()).as_ref()
         }
     }
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct User__Array {
     klass: *const u8,
     monitor: *const u8,
@@ -225,7 +238,7 @@ pub struct User__Array {
 
 impl User__Array {
     pub fn get(&self, index: usize) -> &User {
-        unsafe { &*self.vector[index] }
+        unsafe { self.vector[index].as_ref().unwrap() }
     }
 
     pub fn as_vec(&self, count: usize) -> Vec<&User> {
@@ -234,17 +247,18 @@ impl User__Array {
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct Int32__Array {
     klass: *const u8,
     monitor: *const u8,
     bounds: *const u8,
     max_length: u64,
-    vector: i32,
+    vector: [i32; 32],
 }
 
 impl Int32__Array {
     pub fn values(&self) -> &[i32] {
-        unsafe { std::slice::from_raw_parts(&self.vector as *const i32, self.max_length as usize) }
+        &self.vector[..self.max_length as usize]
     }
 }
 
@@ -258,17 +272,21 @@ pub struct BallMovement {
 impl BallMovement {
     pub fn hole_number(&self) -> i32 {
         unsafe {
-            let function = il2cpp_fn!("BallMovement_get_HoleNumber", (*const BallMovement, *const MethodInfo) -> i32);
+            let function = il2cpp_fn!(BallMovement_get_HoleNumber, (*const BallMovement, *const MethodInfo) -> i32);
             function(self, null())
         }
     }
 
     pub fn rigid_body(&self) -> &RigidBody {
-        unsafe { &*il2cpp_field!(self, 680, *const RigidBody) }
+        unsafe { il2cpp_field!(self, 584, *const RigidBody).as_ref().unwrap() }
     }
 
     pub fn network_ball_sync(&self) -> &NetworkBallSync {
-        unsafe { &*il2cpp_field!(self, 728, *const NetworkBallSync) }
+        unsafe {
+            il2cpp_field!(self, 632, *const NetworkBallSync)
+                .as_ref()
+                .unwrap()
+        }
     }
 }
 
@@ -281,7 +299,7 @@ pub struct NetworkBallSync {
 
 impl NetworkBallSync {
     pub fn current_position(&self) -> &Vector3 {
-        unsafe { &il2cpp_field!(self, 60, Vector3) }
+        unsafe { il2cpp_field!(self, 60, Vector3) }
     }
 }
 
@@ -300,7 +318,7 @@ impl Vector3 {
 
     pub fn distance(&self, other: &Vector3) -> f32 {
         unsafe {
-            let function = il2cpp_fn!("Vector3_Distance", (*const Vector3, *const Vector3, *const MethodInfo) -> f32);
+            let function = il2cpp_fn!(Vector3_Distance, (*const Vector3, *const Vector3, *const MethodInfo) -> f32);
             function(self, other, null())
         }
     }
@@ -318,7 +336,7 @@ impl RigidBody {
         let mut result = Vector3::new();
         unsafe {
             let function = il2cpp_fn!(
-                "Rigidbody_get_position",
+                Rigidbody_get_position,
                 (*mut Vector3, *const RigidBody, *const MethodInfo)
             );
             function(&mut result, self, null());
@@ -329,7 +347,7 @@ impl RigidBody {
     pub fn set_position(&self, position: &Vector3) {
         unsafe {
             let function = il2cpp_fn!(
-                "Rigidbody_set_position",
+                Rigidbody_set_position,
                 (*const RigidBody, *const Vector3, *const MethodInfo)
             );
             function(self, position, null());
@@ -339,7 +357,7 @@ impl RigidBody {
     pub fn set_velocity(&self, velocity: &Vector3) {
         unsafe {
             let function = il2cpp_fn!(
-                "Rigidbody_set_velocity",
+                Rigidbody_set_velocity,
                 (*const RigidBody, *const Vector3, *const MethodInfo)
             );
             function(self, velocity, null());
@@ -354,23 +372,24 @@ impl GameObject {
     pub fn find_game_objects_with_tag(tag: &Il2CppString) -> &GameObject__Array {
         unsafe {
             let function = il2cpp_fn!(
-                "GameObject_FindGameObjectsWithTag",
+                GameObject_FindGameObjectsWithTag,
                 (*const Il2CppString, *const MethodInfo) -> *const GameObject__Array);
-            &*function(tag, null())
+            function(tag, null()).as_ref().unwrap()
         }
     }
 
     pub fn transform(&self) -> &Transform {
         unsafe {
             let function = il2cpp_fn!(
-                "GameObject_get_transform",
+                GameObject_get_transform,
                 (*const GameObject, *const MethodInfo) -> *const Transform);
-            &*function(self, null())
+            function(self, null()).as_ref().unwrap()
         }
     }
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct GameObject__Array {
     klass: *const u8,
     monitor: *const u8,
@@ -397,7 +416,7 @@ impl Transform {
     pub fn position(&self) -> Vector3 {
         unsafe {
             let function = il2cpp_fn!(
-                "Transform_get_position",
+                Transform_get_position,
                 (*const Transform, *const MethodInfo) -> Vector3);
             function(self, null())
         }
@@ -408,17 +427,17 @@ impl Transform {
 pub struct Camera {}
 
 impl Camera {
-    pub fn main() -> &'static Camera {
+    pub fn main() -> Option<&'static Camera> {
         unsafe {
-            let function = il2cpp_fn!("Camera_get_main", (*const MethodInfo) -> *const Camera);
-            &*function(null())
+            let function = il2cpp_fn!(Camera_get_main, (*const MethodInfo) -> *const Camera);
+            function(null()).as_ref()
         }
     }
 
     pub fn world_to_screen_point_1(&self, position: &Vector3) -> Vector3 {
         unsafe {
             let function = il2cpp_fn!(
-                "Camera_WorldToScreenPoint_1",
+                Camera_WorldToScreenPoint_1,
                 (*const Camera, *const Vector3, *const MethodInfo) -> Vector3);
             function(self, position, null())
         }
